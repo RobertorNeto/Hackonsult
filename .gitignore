@@ -1,4 +1,14 @@
+# node / frontend
 node_modules/
 dist/
 *.tsbuildinfo
+.vite/
+
+# python / backend
+backend/.venv/
+__pycache__/
+*.pyc
+backend/pulso.db
+
+# os
 .DS_Store

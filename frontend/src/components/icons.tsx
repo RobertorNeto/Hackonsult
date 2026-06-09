@@ -158,6 +158,28 @@ export const IconArrowIn = (_?: P) => (
   </svg>
 );
 
+export const IconEdit = (_?: P) => (
+  <svg viewBox="0 0 24 24" {...base}>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+  </svg>
+);
+
+export const IconTrash = (_?: P) => (
+  <svg viewBox="0 0 24 24" {...base}>
+    <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+    <path d="M10 11v6M14 11v6" />
+  </svg>
+);
+
+export const IconSwap = (_?: P) => (
+  <svg viewBox="0 0 24 24" {...base}>
+    <path d="M7 4 3 8l4 4" />
+    <path d="M3 8h13a4 4 0 0 1 0 8" />
+    <path d="M17 20l4-4-4-4" />
+  </svg>
+);
+
 export const IconSettings = (_?: P) => (
   <svg viewBox="0 0 24 24" {...base}>
     <circle cx="12" cy="12" r="3" />

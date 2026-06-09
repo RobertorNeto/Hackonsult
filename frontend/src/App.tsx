@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { user } from "./data/mock";
+import { useData } from "./store";
 import {
   IconBell,
   IconBolt,
@@ -10,6 +10,7 @@ import {
   IconSparkChat,
   IconTarget,
 } from "./components/icons";
+import { EditProfileModal } from "./components/modals";
 import {
   AssistantPage,
   GoalsPage,
@@ -20,17 +21,41 @@ import {
 
 type Tab = "overview" | "health" | "goals" | "projection" | "assistant";
 
-const NAV: { id: Tab; label: string; Icon: () => JSX.Element; badge?: string }[] = [
+const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
   { id: "overview", label: "Visão geral", Icon: IconGrid },
   { id: "health", label: "Saúde", Icon: IconPulse },
-  { id: "goals", label: "Metas", Icon: IconTarget, badge: "3" },
+  { id: "goals", label: "Metas", Icon: IconTarget },
   { id: "projection", label: "Projeção", Icon: IconChart },
   { id: "assistant", label: "Assistente", Icon: IconSparkChat },
 ];
 
 export default function App() {
+  const { data, loading, error, reload } = useData();
   const [tab, setTab] = useState<Tab>("overview");
+  const [editOpen, setEditOpen] = useState(false);
   const go = (t: string) => setTab(t as Tab);
+
+  if (loading) {
+    return (
+      <div className="boot">
+        <div className="boot-mark"><IconBolt /></div>
+        <span className="boot-msg">Carregando seu pulso financeiro…</span>
+      </div>
+    );
+  }
+  if (error || !data) {
+    return (
+      <div className="boot">
+        <div className="boot-mark err"><IconBolt /></div>
+        <span className="boot-msg">Não consegui falar com o servidor.</span>
+        <span className="boot-sub">{error ?? "Sem dados."} Verifique se o backend está rodando em :5000.</span>
+        <button className="btn btn-primary" onClick={reload}>Tentar de novo</button>
+      </div>
+    );
+  }
+
+  const { user, goals } = data;
+  const goalBadge = goals.length ? String(goals.length) : undefined;
 
   return (
     <div className="app">
@@ -42,8 +67,9 @@ export default function App() {
         </div>
 
         <nav className="nav-pill" aria-label="navegação principal">
-          {NAV.map(({ id, label, Icon, badge }) => {
+          {NAV.map(({ id, label, Icon }) => {
             const active = tab === id;
+            const badge = id === "goals" ? goalBadge : undefined;
             return (
               <button key={id} className={`np-item ${active ? "active" : ""}`} onClick={() => setTab(id)}>
                 {active && (
@@ -63,7 +89,7 @@ export default function App() {
 
         <div className="actions">
           <button className="icon-btn" aria-label="notificações"><IconBell /><span className="ping" /></button>
-          <div className="avatar" title={`${user.fullName} · ${user.job}`}>{user.initials}</div>
+          <button className="avatar" title="Editar perfil" onClick={() => setEditOpen(true)}>{user.initials}</button>
         </div>
       </header>
 
@@ -95,6 +121,8 @@ export default function App() {
           </button>
         ))}
       </nav>
+
+      <EditProfileModal open={editOpen} onClose={() => setEditOpen(false)} />
     </div>
   );
 }
