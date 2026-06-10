@@ -63,6 +63,15 @@ CREATE TABLE IF NOT EXISTS insight (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   badge TEXT, icon TEXT, title TEXT, body TEXT, primary_cta TEXT, secondary_cta TEXT
 );
+CREATE TABLE IF NOT EXISTS recurring (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  icon TEXT NOT NULL DEFAULT 'card',
+  amount REAL NOT NULL,
+  day_of_month INTEGER NOT NULL CHECK(day_of_month BETWEEN 1 AND 31),
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT
+);
 """
 
 
@@ -70,7 +79,6 @@ def init_db():
     conn = get_conn()
     conn.executescript(SCHEMA)
     conn.commit()
-    # só popula se ainda não houver usuário
     has_user = conn.execute("SELECT COUNT(*) c FROM user").fetchone()["c"]
     if not has_user:
         _seed(conn)
@@ -78,7 +86,7 @@ def init_db():
 
 
 def _seed(conn):
-    from seed import SEED  # dados iniciais (espelham o mock antigo)
+    from seed import SEED
 
     u = SEED["user"]
     conn.execute(
@@ -140,4 +148,15 @@ def _seed(conn):
         "INSERT INTO insight VALUES (1,?,?,?,?,?,?)",
         (ins["badge"], ins["icon"], ins["title"], ins["body"], ins["primary"], ins["secondary"]),
     )
+    _seed_recurring = [
+        ("r-1", "Aluguel",  "shield", 1200.0,  5),
+        ("r-2", "Netflix",  "film",     45.0, 15),
+        ("r-3", "Academia", "gym",      80.0, 10),
+        ("r-4", "Internet", "trend",   100.0, 20),
+    ]
+    for rid, lbl, ico, amt, dom in _seed_recurring:
+        conn.execute(
+            "INSERT OR IGNORE INTO recurring VALUES (?,?,?,?,?,1,?)",
+            (rid, lbl, ico, amt, dom, ""),
+        )
     conn.commit()

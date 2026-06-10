@@ -5,10 +5,23 @@ import { AnimatePresence, motion } from "motion/react";
 import { useData } from "../store";
 import { ICON_OPTIONS } from "./caticon";
 import { GoalSim } from "./charts";
-import { brl0, type Goal, type Lever, type Tx } from "../data/mock";
+import { brl0, type Goal, type Lever, type Recurring, type Tx } from "../data/mock";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 const num = (s: string) => Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
+
+/** Retorna a data/hora atual no formato que o input datetime-local espera: "YYYY-MM-DDTHH:MM" */
+function nowDatetimeLocal(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** Converte "YYYY-MM-DDTHH:MM:SS" (vindo do backend) para o formato do input */
+function toDatetimeLocal(iso: string): string {
+  if (!iso) return nowDatetimeLocal();
+  return iso.slice(0, 16); // "YYYY-MM-DDTHH:MM"
+}
 
 // ——— helpers de prazo (mês) ⇄ meses restantes ———
 const MES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
@@ -107,8 +120,8 @@ export function TransactionModal({
   const [merchant, setMerchant] = useState("");
   const [value, setValue] = useState("");
   const [kind, setKind] = useState<"saida" | "entrada">("saida");
-  const [category, setCategory] = useState("Outros");
   const [icon, setIcon] = useState("card");
+  const [when, setWhen] = useState(nowDatetimeLocal);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -118,10 +131,11 @@ export function TransactionModal({
       setMerchant(edit.merchant);
       setValue(String(Math.abs(edit.amount)).replace(".", ","));
       setKind(edit.amount >= 0 ? "entrada" : "saida");
-      setCategory(edit.category);
       setIcon(edit.icon);
+      setWhen(toDatetimeLocal(edit.createdAt ?? ""));
     } else {
-      setMerchant(""); setValue(""); setKind("saida"); setCategory("Outros"); setIcon("card");
+      setMerchant(""); setValue(""); setKind("saida"); setIcon("card");
+      setWhen(nowDatetimeLocal());
     }
     setErr(null);
   }, [open, edit]);
@@ -134,10 +148,12 @@ export function TransactionModal({
       return;
     }
     const amount = kind === "saida" ? -Math.abs(v) : Math.abs(v);
+    // categoria = label legível do ícone selecionado
+    const resolvedCategory = ICON_OPTIONS.find((o) => o.key === icon)?.label ?? icon;
     setBusy(true); setErr(null);
     try {
-      if (edit) await editTransaction(edit.id, { merchant: merchant.trim(), amount, category, icon });
-      else await addTransaction({ merchant: merchant.trim(), amount, category, icon });
+      if (edit) await editTransaction(edit.id, { merchant: merchant.trim(), amount, category: resolvedCategory, icon, when });
+      else await addTransaction({ merchant: merchant.trim(), amount, category: resolvedCategory, icon, when });
       onClose();
     } catch (e2: any) {
       setErr(String(e2?.message ?? e2));
@@ -160,11 +176,11 @@ export function TransactionModal({
           <Field label="Valor (R$)">
             <input value={value} onChange={(e) => setValue(e.target.value)} placeholder="0,00" inputMode="decimal" />
           </Field>
-          <Field label="Categoria">
-            <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="Delivery" />
+          <Field label="Data e hora">
+            <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} />
           </Field>
         </div>
-        <Field label="Ícone">
+        <Field label="Categoria">
           <select value={icon} onChange={(e) => setIcon(e.target.value)}>
             {ICON_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
           </select>
@@ -411,45 +427,64 @@ export function CutCategoryModal({
   );
 }
 
-/* ---------- editar perfil (inclui renda) ---------- */
-export function EditProfileModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { data, updateUser, updateBalance } = useData();
-  const u = data?.user;
-  const b = data?.balance;
-  const [fullName, setFullName] = useState("");
-  const [job, setJob] = useState("");
-  const [age, setAge] = useState("");
-  const [income, setIncome] = useState("");
+/* ---------- gasto fixo / recorrente (add / editar / excluir) ---------- */
+export function RecurringModal({
+  open,
+  onClose,
+  edit,
+}: {
+  open: boolean;
+  onClose: () => void;
+  edit?: Recurring | null;
+}) {
+  const { addRecurring, editRecurring, deleteRecurring } = useData();
+  const [label, setLabel] = useState("");
+  const [amount, setAmount] = useState("");
+  const [dayOfMonth, setDayOfMonth] = useState("5");
+  const [icon, setIcon] = useState("card");
+  const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open && u && b) {
-      setFullName(u.fullName);
-      setJob(u.job);
-      setAge(String(u.age));
-      setIncome(String(b.income).replace(".", ","));
-      setErr(null);
+    if (!open) return;
+    if (edit) {
+      setLabel(edit.label);
+      setAmount(String(edit.amount).replace(".", ","));
+      setDayOfMonth(String(edit.dayOfMonth));
+      setIcon(edit.icon);
+      setActive(edit.active);
+    } else {
+      setLabel(""); setAmount(""); setDayOfMonth("5"); setIcon("card"); setActive(true);
     }
-  }, [open, u, b]);
+    setErr(null);
+  }, [open, edit]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!fullName.trim()) {
-      setErr("O nome não pode ficar vazio.");
+    const a = num(amount);
+    const dom = Math.max(1, Math.min(31, Number(dayOfMonth) || 1));
+    if (!label.trim() || a <= 0) {
+      setErr("Informe um nome e um valor maior que zero.");
       return;
     }
-    const parts = fullName.trim().split(/\s+/);
-    const initials = (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
-    const inc = num(income);
     setBusy(true); setErr(null);
     try {
-      await updateUser({
-        fullName: fullName.trim(), name: parts[0], initials,
-        job: job.trim(), age: Number(age) || u?.age, salary: inc || u?.salary,
-      });
-      // renda alimenta a barra de gastos (entradas do mês)
-      if (inc > 0 && inc !== b?.income) await updateBalance({ income: inc });
+      if (edit) await editRecurring(edit.id, { label: label.trim(), amount: a, dayOfMonth: dom, icon, active });
+      else await addRecurring({ label: label.trim(), amount: a, dayOfMonth: dom, icon });
+      onClose();
+    } catch (e2: any) {
+      setErr(String(e2?.message ?? e2));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!edit) return;
+    setBusy(true);
+    try {
+      await deleteRecurring(edit.id);
       onClose();
     } catch (e2: any) {
       setErr(String(e2?.message ?? e2));
@@ -459,23 +494,150 @@ export function EditProfileModal({ open, onClose }: { open: boolean; onClose: ()
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="Editar perfil" subtitle="Dados pessoais e renda mensal.">
+    <Modal open={open} onClose={onClose} title={edit ? "Editar gasto fixo" : "Novo gasto fixo"} subtitle="Cobrança mensal aplicada como evento determinístico na simulação.">
       <form className="form" onSubmit={submit}>
+        <Field label="Descrição">
+          <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Aluguel, academia, plano…" autoFocus />
+        </Field>
+        <div className="field-row">
+          <Field label="Valor (R$)">
+            <input value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="350" inputMode="decimal" />
+          </Field>
+          <Field label="Dia do mês">
+            <input value={dayOfMonth} onChange={(e) => setDayOfMonth(e.target.value)} placeholder="5" inputMode="numeric" min={1} max={31} />
+          </Field>
+        </div>
+        <Field label="Ícone / Categoria">
+          <select value={icon} onChange={(e) => setIcon(e.target.value)}>
+            {ICON_OPTIONS.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+        </Field>
+        {edit && (
+          <label className="field" style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} style={{ width: "auto" }} />
+            <span className="field-k" style={{ marginBottom: 0 }}>Ativo na simulação</span>
+          </label>
+        )}
+        <p className="field-hint">O valor será deduzido do saldo no dia {dayOfMonth || "?"} de cada mês na projeção.</p>
+        <ErrorMsg msg={err} />
+        <div className="form-actions">
+          {edit && <button type="button" className="btn btn-ghost danger" onClick={remove} disabled={busy} style={{ marginRight: "auto" }}>Excluir</button>}
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="btn btn-primary" disabled={busy}>{busy ? "Salvando…" : edit ? "Salvar" : "Adicionar"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+/* ---------- editar perfil (inclui renda e configurações financeiras) ---------- */
+export function EditProfileModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { data, updateUser, updateBalance } = useData();
+  const u = data?.user;
+  const b = data?.balance;
+
+  // dados pessoais
+  const [fullName, setFullName] = useState("");
+  const [job, setJob] = useState("");
+  const [age, setAge] = useState("");
+
+  // configurações financeiras
+  const [income, setIncome] = useState("");
+  const [paydayDay, setPaydayDay] = useState("");
+  const [checking, setChecking] = useState("");
+  const [creditUsed, setCreditUsed] = useState("");
+  const [creditDueDay, setCreditDueDay] = useState("");
+
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open && u && b) {
+      setFullName(u.fullName);
+      setJob(u.job);
+      setAge(String(u.age));
+      setIncome(String(b.income).replace(".", ","));
+      setPaydayDay(String(u.paydayDay));
+      setChecking(String(b.checking).replace(".", ","));
+      setCreditUsed(String(b.creditUsed).replace(".", ","));
+      setCreditDueDay(String(b.creditDueDay));
+      setErr(null);
+    }
+  }, [open, u, b]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!fullName.trim()) { setErr("O nome não pode ficar vazio."); return; }
+    const parts = fullName.trim().split(/\s+/);
+    const initials = (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
+    const inc        = num(income);
+    const pday       = Math.max(1, Math.min(31, Number(paydayDay) || u!.paydayDay));
+    const check      = num(checking);
+    const credUsed   = num(creditUsed);
+    const credDueDay = Math.max(1, Math.min(31, Number(creditDueDay) || b!.creditDueDay));
+    setBusy(true); setErr(null);
+    try {
+      await updateUser({
+        fullName: fullName.trim(), name: parts[0], initials,
+        job: job.trim(), age: Number(age) || u?.age,
+        salary: inc || u?.salary,
+        paydayDay: pday,
+      });
+      await updateBalance({
+        income:       inc      || b?.income,
+        checking:     check    || b?.checking,
+        creditUsed:   credUsed,
+        creditDueDay: credDueDay,
+      });
+      onClose();
+    } catch (e2: any) {
+      setErr(String(e2?.message ?? e2));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} wide title="Editar perfil" subtitle="Dados pessoais e configurações financeiras.">
+      <form className="form" onSubmit={submit}>
+
+        {/* ── dados pessoais ── */}
+        <p className="field-section-label">Dados pessoais</p>
         <Field label="Nome completo">
           <input value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Lucas Mendes" autoFocus />
         </Field>
-        <Field label="Ocupação">
-          <input value={job} onChange={(e) => setJob(e.target.value)} placeholder="Analista Jr" />
-        </Field>
         <div className="field-row">
+          <Field label="Ocupação">
+            <input value={job} onChange={(e) => setJob(e.target.value)} placeholder="Analista Jr" />
+          </Field>
           <Field label="Idade">
             <input value={age} onChange={(e) => setAge(e.target.value)} placeholder="26" inputMode="numeric" />
           </Field>
+        </div>
+
+        {/* ── configurações financeiras ── */}
+        <p className="field-section-label" style={{ marginTop: 20 }}>Configurações financeiras</p>
+        <div className="field-row">
           <Field label="Renda mensal (R$)">
             <input value={income} onChange={(e) => setIncome(e.target.value)} placeholder="3550" inputMode="decimal" />
           </Field>
+          <Field label="Dia do salário">
+            <input value={paydayDay} onChange={(e) => setPaydayDay(e.target.value)} placeholder="5" inputMode="numeric" />
+          </Field>
         </div>
-        <p className="field-hint">A renda é a referência da barra de gastos e da estimativa do mês.</p>
+        <Field label="Saldo em conta (R$)">
+          <input value={checking} onChange={(e) => setChecking(e.target.value)} placeholder="1284" inputMode="decimal" />
+        </Field>
+        <div className="field-row">
+          <Field label="Fatura atual do cartão (R$)">
+            <input value={creditUsed} onChange={(e) => setCreditUsed(e.target.value)} placeholder="1870" inputMode="decimal" />
+          </Field>
+          <Field label="Dia de vencimento">
+            <input value={creditDueDay} onChange={(e) => setCreditDueDay(e.target.value)} placeholder="15" inputMode="numeric" />
+          </Field>
+        </div>
+        <p className="field-hint">Saldo e fatura são usados na simulação de projeção do mês.</p>
+
         <ErrorMsg msg={err} />
         <div className="form-actions">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>

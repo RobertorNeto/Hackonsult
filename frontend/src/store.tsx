@@ -2,7 +2,7 @@
 // Mantém a UI síncrona (os componentes leem do contexto, não do mock).
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api } from "./lib/api";
-import type { Balance, Bootstrap, Goal, Tx, User } from "./data/mock";
+import type { Balance, Bootstrap, Goal, Recurring, Tx, User } from "./data/mock";
 
 type AddTx = {
   merchant: string;
@@ -12,6 +12,9 @@ type AddTx = {
   when?: string;
   flagged?: boolean;
 };
+type AddRecurring = { label: string; amount: number; dayOfMonth: number; icon?: string };
+type EditRecurring = { label?: string; amount?: number; dayOfMonth?: number; icon?: string; active?: boolean };
+
 type AddGoal = {
   name: string;
   target: number;
@@ -23,7 +26,7 @@ type AddGoal = {
   risk?: string;
 };
 
-type EditTx = { merchant?: string; amount?: number; category?: string; icon?: string };
+type EditTx = { merchant?: string; amount?: number; category?: string; icon?: string; when?: string };
 type EditGoal = {
   name?: string;
   target?: number;
@@ -50,6 +53,9 @@ type Ctx = {
   deleteLever: (id: string) => Promise<void>;
   updateUser: (patch: Partial<User>) => Promise<void>;
   updateBalance: (patch: Partial<Balance>) => Promise<void>;
+  addRecurring: (r: AddRecurring) => Promise<void>;
+  editRecurring: (id: string, r: EditRecurring) => Promise<void>;
+  deleteRecurring: (id: string) => Promise<void>;
 };
 
 const DataContext = createContext<Ctx | null>(null);
@@ -122,6 +128,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setData((d) => (d ? { ...d, levers: d.levers.filter((x) => x.id !== id) } : d));
   }, []);
 
+  const addRecurring = useCallback(async (r: AddRecurring) => {
+    const { recurring } = await api.addRecurring(r);
+    setData((d) => (d ? { ...d, recurring: [...d.recurring, recurring] } : d));
+  }, []);
+
+  const editRecurring = useCallback(async (id: string, r: EditRecurring) => {
+    const { recurring } = await api.editRecurring(id, r);
+    setData((d) => (d ? { ...d, recurring: d.recurring.map((x) => (x.id === id ? recurring : x)) } : d));
+  }, []);
+
+  const deleteRecurring = useCallback(async (id: string) => {
+    await api.deleteRecurring(id);
+    setData((d) => (d ? { ...d, recurring: d.recurring.filter((x) => x.id !== id) } : d));
+  }, []);
+
   const updateUser = useCallback(async (patch: Partial<User>) => {
     const user = await api.updateUser(patch);
     setData((d) => (d ? { ...d, user } : d));
@@ -138,16 +159,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     addGoal, editGoal, deleteGoal,
     addLever, editLever, deleteLever,
     updateUser, updateBalance,
+    addRecurring, editRecurring, deleteRecurring,
   };
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
-/** Hook com os dados já carregados. Lança se usado fora do provider ou sem dados. */
+/** Hook com os dados ja carregados. Lanca se usado fora do provider ou sem dados. */
 export function useData() {
   const ctx = useContext(DataContext);
   if (!ctx) throw new Error("useData fora do DataProvider");
   return ctx;
 }
 
-// reexport de tipos úteis pra ações
-export type { AddTx, AddGoal, Balance, Goal, Tx };
+// reexport de tipos uteis pra acoes
+export type { AddTx, AddGoal, Balance, Goal, Recurring, Tx };

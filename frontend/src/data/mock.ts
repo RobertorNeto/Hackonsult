@@ -70,6 +70,7 @@ export type Tx = {
   amount: number;
   when: string;
   flagged?: boolean;
+  createdAt?: string;
 };
 
 export type User = {
@@ -109,6 +110,15 @@ export type Projection = {
   lower: number[];
 };
 
+export type Recurring = {
+  id: string;
+  label: string;
+  icon: string;
+  amount: number;
+  dayOfMonth: number;
+  active: boolean;
+};
+
 export type Insight = {
   badge: string;
   icon: string;
@@ -126,6 +136,7 @@ export type Bootstrap = {
   transactions: Tx[];
   levers: Lever[];
   projection: Projection;
+  recurring: Recurring[];
   recommendations: Reco[];
   insight: Insight;
 };

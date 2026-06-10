@@ -20,7 +20,7 @@ import {
   ScoreRing,
 } from "./components/charts";
 import { CatIcon, VITAL_ICON } from "./components/caticon";
-import { CutCategoryModal, GoalModal, TransactionModal } from "./components/modals";
+import { CutCategoryModal, GoalModal, RecurringModal, TransactionModal } from "./components/modals";
 import {
   IconBolt,
   IconCheck,
@@ -31,7 +31,7 @@ import {
   IconShield,
   IconTrash,
 } from "./components/icons";
-import type { Lever } from "./data/mock";
+import type { Lever, Recurring } from "./data/mock";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 const fade = (i = 0) => ({
@@ -428,26 +428,27 @@ export function GoalsPage() {
    ============================================================ */
 export function ProjectionPage() {
   const { data } = useData();
-  const { projection, levers, user } = data!;
+  const { projection, levers, user, transactions, recurring, balance } = data!;
 
-  // áreas ativas (sugeridas), trocáveis; mantém-se válidas se o pool mudar
-  const [activeIds, setActiveIds] = useState<string[]>(() => levers.slice(0, 3).map((l) => l.id));
   const [cuts, setCuts] = useState<Record<string, number>>({});
   const [catOpen, setCatOpen] = useState(false);
   const [catEdit, setCatEdit] = useState<Lever | null>(null);
+  const [recOpen, setRecOpen] = useState(false);
+  const [recEdit, setRecEdit] = useState<Recurring | null>(null);
 
-  useEffect(() => {
-    setActiveIds((prev) => {
-      const valid = prev.filter((id) => levers.some((l) => l.id === id));
-      const extra = levers.map((l) => l.id).filter((id) => !valid.includes(id));
-      const want = Math.min(3, levers.length);
-      return [...valid, ...extra].slice(0, want);
-    });
-  }, [levers]);
+  // gasto real do mês agrupado por ícone (= categoria)
+  const spentByIcon = useMemo(() => {
+    const thisMonth = new Date().toISOString().slice(0, 7);
+    return transactions
+      .filter((t) => t.amount < 0 && (!t.createdAt || t.createdAt.startsWith(thisMonth)))
+      .reduce<Record<string, number>>((acc, t) => {
+        acc[t.icon] = (acc[t.icon] || 0) + Math.abs(t.amount);
+        return acc;
+      }, {});
+  }, [transactions]);
 
-  const byId = useMemo(() => Object.fromEntries(levers.map((l) => [l.id, l])), [levers]);
-  // corte por área limitado ao gasto total da área
-  const totalCut = activeIds.reduce((a, id) => a + Math.min(cuts[id] || 0, byId[id]?.current ?? 0), 0);
+  // corte total somado de todas as categorias
+  const totalCut = levers.reduce((a, l) => a + Math.min(cuts[l.id] || 0, l.current), 0);
 
   const plan = useMemo(() => {
     const { median, todayIndex, daysInMonth } = projection;
@@ -461,18 +462,37 @@ export function ProjectionPage() {
 
   const newClose = plan[plan.length - 1];
   const baseClose = projection.expected;
-  const newProbNeg = Math.max(0.04, projection.probabilityNegative - totalCut / 900);
+
+  // Probabilidade derivada da distribuição Normal implícita da simulação.
+  // spread p80–p20 ≈ 2,56σ → estimamos o σ dos valores finais.
+  // P(saldo < 0) = Φ(−newClose / σ)
+  const newProbNeg = useMemo(() => {
+    const spread = projection.optimistic - projection.pessimistic; // p80 - p20
+    const mcSigma = spread > 0 ? spread / 2.56 : 1;
+    // Sigma do MC captura só variância dia-a-dia; como piso, usamos 6% da renda
+    // mensal, que é a incerteza de planejamento relevante para avaliar cortes.
+    const sigma = Math.max(mcSigma, balance.income * 0.06);
+    const z = -newClose / sigma;
+    // CDF normal aproximada (Abramowitz & Stegun)
+    const absZ = Math.abs(z);
+    const t = 1 / (1 + 0.2316419 * absZ);
+    const d = 0.3989423 * Math.exp(-z * z / 2);
+    const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.7814779 + t * (-1.8212560 + t * 1.3302744))));
+    return Math.min(1, Math.max(0, z < 0 ? p : 1 - p));
+  }, [newClose, projection.optimistic, projection.pessimistic, balance.income]);
+
   const isPos = newClose >= 0;
   const ganho = newClose - baseClose;
 
-  function swap(slot: number, newId: string) {
-    setActiveIds((ids) => ids.map((id, i) => (i === slot ? newId : id)));
-  }
   function setCut(id: string, v: number) {
     setCuts((c) => ({ ...c, [id]: v }));
   }
   function openAddCat() { setCatEdit(null); setCatOpen(true); }
   function openEditCat(l: Lever) { setCatEdit(l); setCatOpen(true); }
+  function openAddRec() { setRecEdit(null); setRecOpen(true); }
+  function openEditRec(r: Recurring) { setRecEdit(r); setRecOpen(true); }
+
+  const totalRecurring = recurring.filter((r) => r.active).reduce((a, r) => a + r.amount, 0);
 
   return (
     <div className="page">
@@ -514,28 +534,69 @@ export function ProjectionPage() {
             <h2>Onde você corta</h2>
             <button className="link-add" onClick={openAddCat}><IconPlus /> categoria</button>
           </div>
-          <p className="muted" style={{ fontSize: 13, marginBottom: 14 }}>Arraste quanto cortar em cada área. Troque a categoria no menu ou edite o gasto no lápis.</p>
 
-          {activeIds.length === 0 && <div className="empty">Sem categorias. Adicione uma pra simular cortes.</div>}
+          {levers.length === 0 && <div className="empty">Sem categorias. Adicione uma pra simular cortes.</div>}
 
-          {activeIds.map((id, slot) => {
-            const l = byId[id];
-            if (!l) return null;
-            const cut = Math.min(cuts[id] || 0, l.current);
-            const options = levers.filter((o) => o.id === id || !activeIds.includes(o.id));
+          {levers.map((l) => {
+            const spent      = spentByIcon[l.icon] || 0;
+            const budget     = l.current;
+            const cut        = Math.min(cuts[l.id] || 0, Math.max(0, budget - spent));
+            const sliderVal  = budget - cut;                          // projected spend
+            const overBudget  = spent > budget;
+            const atBudget    = !overBudget && spent === budget;
+            const locked      = overBudget || atBudget;
+
+            // percentuais para o gradiente do track (0..budget = 0%..100%)
+            const sp = budget > 0 ? Math.min(100, (spent / budget) * 100) : 100;
+            const tp = budget > 0 ? Math.min(100, (sliderVal / budget) * 100) : 100;
+
+            const spentColor = overBudget
+              ? "color-mix(in srgb,var(--coral) 50%,var(--panel-3))"
+              : atBudget
+              ? "color-mix(in srgb,var(--amber) 55%,var(--panel-3))"
+              : "color-mix(in srgb,var(--text) 28%,var(--panel-3))";
+
+            const trackBg = locked
+              ? spentColor
+              : `linear-gradient(to right,
+                  ${spentColor} 0%, ${spentColor} ${sp}%,
+                  var(--panel-3) ${sp}%, var(--panel-3) ${tp}%,
+                  color-mix(in srgb,var(--mint) 45%,var(--panel-3)) ${tp}%,
+                  color-mix(in srgb,var(--mint) 45%,var(--panel-3)) 100%
+                )`;
+
             return (
-              <div className="cut" key={id}>
+              <div className="cut" key={l.id}>
                 <div className="cut-head">
                   <span className="cut-ic"><CatIcon name={l.icon} /></span>
-                  <select className="cut-select" value={id} onChange={(e) => swap(slot, e.target.value)}>
-                    {options.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-                  </select>
+                  <span className="cut-label">{l.label}</span>
                   <button className="cut-edit" aria-label="editar categoria" onClick={() => openEditCat(l)}><IconEdit /></button>
                 </div>
-                <input type="range" min={0} max={l.current} step={10} value={cut} onChange={(e) => setCut(id, Number(e.target.value))} />
+
+                <input
+                  type="range"
+                  min={0}
+                  max={budget}
+                  step={10}
+                  value={sliderVal}
+                  disabled={locked || budget === 0}
+                  style={{ background: trackBg }}
+                  onChange={(e) => {
+                    // thumb não pode ficar abaixo do já gasto
+                    const v = Math.max(spent, Number(e.target.value));
+                    setCut(l.id, budget - v);
+                  }}
+                />
                 <div className="cut-scale">
-                  <span>cortar <b style={{ color: cut > 0 ? "var(--mint)" : "var(--text-mute)" }}>{brl0(cut)}</b></span>
-                  <span>de {brl0(l.current)}/mês</span>
+                  <span>
+                    <span style={{ color: overBudget ? "var(--coral)" : atBudget ? "var(--amber)" : "var(--text-mute)" }}>
+                      {brl0(spent)} gastos{overBudget ? " ⚠" : atBudget ? " ✓" : ""}
+                    </span>
+                    {cut > 0 && (
+                      <span> · cortar <b style={{ color: "var(--mint)" }}>{brl0(cut)}</b></span>
+                    )}
+                  </span>
+                  <span style={{ color: "var(--text-mute)" }}>{brl0(budget)}/mês</span>
                 </div>
               </div>
             );
@@ -555,7 +616,33 @@ export function ProjectionPage() {
         </motion.div>
       </div>
 
+      {/* gastos fixos */}
+      <motion.div {...fade(4)} className="panel">
+        <div className="panel-head">
+          <h2>Gastos fixos mensais</h2>
+          <button className="link-add" onClick={openAddRec}><IconPlus /> adicionar</button>
+        </div>
+        <p className="chart-note" style={{ marginTop: 0, marginBottom: 12 }}>
+          Aplicados como eventos determinísticos na simulação Monte Carlo · total ativo: <b>{brl0(totalRecurring)}/mês</b>
+        </p>
+        {recurring.length === 0 && <div className="empty">Nenhum gasto fixo. Adicione aluguel, planos de assinatura, etc.</div>}
+        <div className="rec-list">
+          {recurring.map((r) => (
+            <div className={`rec-item ${r.active ? "" : "rec-inactive"}`} key={r.id}>
+              <span className="rec-ic"><CatIcon name={r.icon} /></span>
+              <div className="rec-info">
+                <b>{r.label}</b>
+                <small>dia {r.dayOfMonth} · {r.active ? "ativo" : "inativo"}</small>
+              </div>
+              <span className="rec-amt">{brl0(r.amount)}/mês</span>
+              <button className="cut-edit" aria-label="editar" onClick={() => openEditRec(r)}><IconEdit /></button>
+            </div>
+          ))}
+        </div>
+      </motion.div>
+
       <CutCategoryModal open={catOpen} onClose={() => setCatOpen(false)} edit={catEdit} />
+      <RecurringModal open={recOpen} onClose={() => setRecOpen(false)} edit={recEdit} />
     </div>
   );
 }

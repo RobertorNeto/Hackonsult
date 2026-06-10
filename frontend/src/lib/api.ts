@@ -1,5 +1,5 @@
 // Cliente da API Flask. Em dev o Vite faz proxy de /api → :5000.
-import type { Balance, Bootstrap, Goal, Lever, Tx, User } from "../data/mock";
+import type { Balance, Bootstrap, Goal, Lever, Recurring, Tx, User } from "../data/mock";
 
 const BASE = "/api";
 
@@ -94,4 +94,13 @@ export const api = {
 
   updateBalance: (patch: Partial<Balance>) =>
     req<Balance>("/balance", { method: "PATCH", body: JSON.stringify(patch) }),
+
+  addRecurring: (r: { label: string; amount: number; dayOfMonth: number; icon?: string }) =>
+    req<{ recurring: Recurring }>("/recurring", { method: "POST", body: JSON.stringify(r) }),
+
+  editRecurring: (id: string, r: { label?: string; amount?: number; dayOfMonth?: number; icon?: string; active?: boolean }) =>
+    req<{ recurring: Recurring }>(`/recurring/${id}`, { method: "PATCH", body: JSON.stringify(r) }),
+
+  deleteRecurring: (id: string) =>
+    req<{ deleted: string }>(`/recurring/${id}`, { method: "DELETE" }),
 };

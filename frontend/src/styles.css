@@ -567,6 +567,17 @@ input, select { font-family: inherit; }
 .whatif-result .num { font-family: var(--font-display); font-weight: 650; font-size: 24px; letter-spacing: -0.03em; }
 .foot-note { font-family: var(--font-mono); font-size: 11px; color: var(--text-mute); text-align: center; margin-top: 10px; }
 
+/* ── Gastos fixos (recurring) ── */
+.rec-list { display: flex; flex-direction: column; gap: 2px; }
+.rec-item { display: flex; align-items: center; gap: 10px; padding: 10px 6px; border-bottom: 1px solid var(--line-soft); }
+.rec-item:last-of-type { border-bottom: none; }
+.rec-inactive { opacity: 0.45; }
+.rec-ic { display: grid; place-items: center; color: var(--text-dim); flex: none; width: 28px; }
+.rec-info { flex: 1; min-width: 0; }
+.rec-info b { display: block; font-size: 13px; font-weight: 550; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rec-info small { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-mute); }
+.rec-amt { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--text-dim); flex: none; }
+
 /* ===================== CHAT ===================== */
 .chat-shell { display: grid; grid-template-columns: 1fr 320px; gap: 18px; align-items: start; }
 .chat-panel { display: flex; flex-direction: column; height: 600px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow-xs); }
@@ -675,6 +686,7 @@ input, select { font-family: inherit; }
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
 .form-actions .btn:disabled { opacity: 0.6; cursor: default; }
 .field-hint { font-size: 12px; color: var(--text-mute); line-height: 1.45; margin-top: -4px; }
+.field-section-label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-mute); margin-bottom: -4px; }
 .modal.wide { max-width: 720px; }
 
 /* modal de meta: form + simulação lado a lado */
@@ -766,15 +778,25 @@ input, select { font-family: inherit; }
 .cut-edit:hover { background: var(--panel-3); color: var(--text); }
 .cut-scale { display: flex; justify-content: space-between; gap: 10px; margin-top: 7px; font-family: var(--font-mono); font-size: 11px; color: var(--text-mute); white-space: nowrap; }
 .cut-scale b { font-weight: 600; }
+.cut-label { flex: 1; font-size: 13px; font-weight: 500; color: var(--text); }
 .cut input[type="range"] {
-  -webkit-appearance: none; appearance: none; width: 100%; height: 5px; border-radius: 999px;
-  background: var(--panel-3); outline: none; cursor: pointer;
+  -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 999px;
+  outline: none; cursor: pointer; margin: 6px 0 4px;
+  /* background is set inline via JS for the 3-zone gradient */
+  background: var(--panel-3);
 }
 .cut input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%;
-  background: var(--ink); cursor: pointer; border: 3px solid #fff; box-shadow: 0 0 0 1px var(--line), var(--shadow-sm);
+  background: var(--ink); cursor: pointer; border: 3px solid #fff;
+  box-shadow: 0 0 0 1px var(--line), var(--shadow-sm);
 }
-.cut input[type="range"]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--ink); border: 3px solid #fff; }
+.cut input[type="range"]::-moz-range-thumb {
+  width: 18px; height: 18px; border-radius: 50%; background: var(--ink);
+  border: 3px solid #fff; box-shadow: 0 0 0 1px var(--line);
+}
+.cut input[type="range"]::-webkit-slider-runnable-track { border-radius: 999px; }
+.cut input[type="range"]:disabled { opacity: 0.4; cursor: default; }
+.cut-spent-row { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 8px; font-family: var(--font-mono); }
 
 /* ===================== RESPONSIVO ===================== */
 @media (max-width: 1024px) {

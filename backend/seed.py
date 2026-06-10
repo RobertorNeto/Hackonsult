@@ -1,16 +1,16 @@
 """Dados iniciais do Pulso. Espelham o mock que rodava no front.
-Persona: Lucas Mendes, 26, analista jr, R$ 3.400/mês."""
+Persona: Lucas Mendes, 28, analista pleno, R$ 6.800/mês."""
 
 SEED = {
     "user": {
-        "name": "Lucas", "fullName": "Lucas Mendes", "initials": "LM", "age": 26,
-        "job": "Analista Jr", "salary": 3400, "bank": "Banco", "paydayDay": 5,
+        "name": "Lucas", "fullName": "Lucas Mendes", "initials": "LM", "age": 28,
+        "job": "Analista Pleno", "salary": 6800, "bank": "Banco", "paydayDay": 5,
         "todayLabel": "segunda, 9 de junho", "monthLabel": "Junho",
     },
     "balance": {
-        "checking": 1284.37, "creditUsed": 1870.0, "creditLimit": 4200.0,
-        "creditDueDay": 15, "income": 3550.0, "spent": 2265.0, "estSpend": 3730.0,
-        "vsLastMonthPct": -38,
+        "checking": 3700.0, "creditUsed": 1400.0, "creditLimit": 6000.0,
+        "creditDueDay": 15, "income": 6800.0, "spent": 2265.0, "estSpend": 7200.0,
+        "vsLastMonthPct": -12,
     },
     "health": {
         "score": 58, "scoreLabel": "Atenção", "zone": "atencao", "deltaMonth": -12,
