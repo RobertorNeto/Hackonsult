@@ -531,7 +531,7 @@ export function GoalsPage() {
    4. PROJEÇÃO — saldo no mês + áreas de corte selecionáveis
    ============================================================ */
 export function ProjectionPage() {
-  const { data } = useData();
+  const { data, recurringCandidates, confirmRecurringCandidate, dismissRecurringCandidate } = useData();
   const { projection, levers, user, recurring, balance, spendByCategory } = data!;
 
   const [cuts, setCuts] = useState<Record<string, number>>({});
@@ -539,6 +539,7 @@ export function ProjectionPage() {
   const [catEdit, setCatEdit] = useState<Lever | null>(null);
   const [recOpen, setRecOpen] = useState(false);
   const [recEdit, setRecEdit] = useState<Recurring | null>(null);
+  const [confirmingRec, setConfirmingRec] = useState<string | null>(null);
 
   // gasto real do mês por CATEGORIA, vindo do backend (conta + cartão combinados).
   // Bate 100% com o Cumbuca — inclui gastos de cartão (ex.: delivery) que não vêm
@@ -595,6 +596,50 @@ export function ProjectionPage() {
   return (
     <div className="page">
       <PageHead kicker="como o mês vai fechar" title={`Projeção de ${user.monthLabel}`} />
+
+      {/* banner: gastos fixos detectados pelo Cumbuca aguardando confirmação */}
+      {recurringCandidates.length > 0 && (
+        <motion.div {...fade(0)} className="rec-candidates-banner">
+          <div className="rcb-head">
+            <span className="rcb-icon">📌</span>
+            <div>
+              <strong>Possíveis gastos fixos detectados</strong>
+              <span className="rcb-sub">Confirme os que repetem todo mês para melhorar sua projeção</span>
+            </div>
+          </div>
+          <div className="rcb-list">
+            {recurringCandidates.map((c) => (
+              <div key={c.merchant} className="rcb-item">
+                <div className="rcb-info">
+                  <span className="rcb-name">{c.merchant}</span>
+                  <span className="rcb-meta">
+                    {brl0(c.amount)}{c.suggestedDay ? ` · todo dia ${c.suggestedDay}` : ""}
+                  </span>
+                </div>
+                <div className="rcb-actions">
+                  <button
+                    className="btn-sm btn-mint"
+                    disabled={confirmingRec === c.merchant}
+                    onClick={async () => {
+                      setConfirmingRec(c.merchant);
+                      await confirmRecurringCandidate(c);
+                      setConfirmingRec(null);
+                    }}
+                  >
+                    {confirmingRec === c.merchant ? "..." : "Confirmar"}
+                  </button>
+                  <button
+                    className="btn-sm btn-ghost"
+                    onClick={() => dismissRecurringCandidate(c.merchant)}
+                  >
+                    Ignorar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* topo: fechamento base vs com plano */}
       <motion.div {...fade(1)} className="proj-summary">

@@ -2,6 +2,7 @@
 // Mantém a UI síncrona (os componentes leem do contexto, não do mock).
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api, getToken } from "./lib/api";
+import type { RecurringCandidate } from "./lib/api";
 import type { Balance, Bootstrap, Goal, Recurring, Tx, User } from "./data/mock";
 
 type AddTx = {
@@ -56,6 +57,11 @@ type Ctx = {
   addRecurring: (r: AddRecurring) => Promise<void>;
   editRecurring: (id: string, r: EditRecurring) => Promise<void>;
   deleteRecurring: (id: string) => Promise<void>;
+  // candidatos a gasto fixo detectados no último sync
+  recurringCandidates: RecurringCandidate[];
+  setRecurringCandidates: (cs: RecurringCandidate[]) => void;
+  confirmRecurringCandidate: (c: RecurringCandidate) => Promise<void>;
+  dismissRecurringCandidate: (merchant: string) => void;
 };
 
 const DataContext = createContext<Ctx | null>(null);
@@ -64,6 +70,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [data, setData] = useState<Bootstrap | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [recurringCandidates, setRecurringCandidates] = useState<RecurringCandidate[]>([]);
 
   const load = useCallback(() => {
     // sem sessão não busca dados (endpoints protegidos): evita 401 na landing/login
@@ -149,6 +156,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setData((d) => (d ? { ...d, recurring: d.recurring.filter((x) => x.id !== id) } : d));
   }, []);
 
+  const confirmRecurringCandidate = useCallback(async (c: RecurringCandidate) => {
+    const { recurring } = await api.addRecurring({
+      label: c.merchant,
+      amount: c.amount,
+      dayOfMonth: c.suggestedDay ?? 1,
+      icon: c.icon,
+    });
+    setData((d) => (d ? { ...d, recurring: [...d.recurring, recurring] } : d));
+    setRecurringCandidates((cs) => cs.filter((x) => x.merchant !== c.merchant));
+  }, []);
+
+  const dismissRecurringCandidate = useCallback((merchant: string) => {
+    setRecurringCandidates((cs) => cs.filter((x) => x.merchant !== merchant));
+  }, []);
+
   const updateUser = useCallback(async (patch: Partial<User>) => {
     const user = await api.updateUser(patch);
     setData((d) => (d ? { ...d, user } : d));
@@ -166,6 +188,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     addLever, editLever, deleteLever,
     updateUser, updateBalance,
     addRecurring, editRecurring, deleteRecurring,
+    recurringCandidates, setRecurringCandidates,
+    confirmRecurringCandidate, dismissRecurringCandidate,
   };
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
