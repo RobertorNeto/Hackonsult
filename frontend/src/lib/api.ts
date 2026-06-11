@@ -160,6 +160,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ email, password }),
     }),
+  changePassword: (email: string, newPassword: string) =>
+    req<{ ok: boolean }>("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ email, new: newPassword }),
+    }),
   me: () => req<{ user: AuthUser }>("/auth/me"),
   logout: () => req<{ ok: boolean }>("/auth/logout", { method: "POST" }),
 };

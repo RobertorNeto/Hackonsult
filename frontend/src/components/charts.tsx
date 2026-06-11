@@ -2,6 +2,76 @@ import { motion } from "motion/react";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 
+const brl0 = (n: number) => "R$ " + Math.round(n).toLocaleString("pt-BR");
+
+/* ====== donut de gasto por área ======
+   Fatia por categoria, total no centro, legenda embaixo. */
+export function CategoryDonut({
+  data,
+  size = 184,
+  thickness = 26,
+}: {
+  data: { label: string; value: number; color: string }[];
+  size?: number;
+  thickness?: number;
+}) {
+  const total = data.reduce((a, d) => a + d.value, 0);
+  const r = (size - thickness) / 2;
+  const cx = size / 2;
+  const circ = 2 * Math.PI * r;
+  let acc = 0;
+
+  if (total <= 0) {
+    return <div className="donut-empty">Sem gastos registrados no mês.</div>;
+  }
+
+  return (
+    <div className="donut">
+      <div className="donut-ring" style={{ width: size, height: size }}>
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ display: "block" }}>
+          <circle cx={cx} cy={cx} r={r} fill="none" stroke="var(--panel-3)" strokeWidth={thickness} />
+          <motion.g
+            initial={{ opacity: 0, scale: 0.86 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.5, ease: EASE }}
+            style={{ transformOrigin: `${cx}px ${cx}px` }}
+          >
+            {data.map((d) => {
+              const len = (d.value / total) * circ;
+              const off = acc;
+              acc += len;
+              return (
+                <circle
+                  key={d.label}
+                  cx={cx} cy={cx} r={r} fill="none"
+                  stroke={d.color} strokeWidth={thickness}
+                  strokeDasharray={`${len} ${circ - len}`}
+                  strokeDashoffset={-off}
+                  transform={`rotate(-90 ${cx} ${cx})`}
+                />
+              );
+            })}
+          </motion.g>
+        </svg>
+        <div className="donut-center">
+          <div className="donut-total">{brl0(total)}</div>
+          <div className="donut-cap">total gasto</div>
+        </div>
+      </div>
+      <div className="donut-legend">
+        {data.map((d) => (
+          <div className="donut-leg" key={d.label}>
+            <span className="dot" style={{ background: d.color }} />
+            <span className="dl-label">{d.label}</span>
+            <span className="dl-val">{brl0(d.value)}</span>
+            <span className="dl-pct">{Math.round((d.value / total) * 100)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ====== Anel de score (estilo WHOOP) ======
    Arco de 270° com trilho tracejado + progresso com glow. */
 export function ScoreRing({

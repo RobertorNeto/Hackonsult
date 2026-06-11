@@ -139,6 +139,7 @@ export type Bootstrap = {
   recurring: Recurring[];
   recommendations: Reco[];
   insight: Insight;
+  spendByCategory: Record<string, number>;
 };
 
 // ——— helpers de formatação / cor ———

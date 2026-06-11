@@ -134,6 +134,20 @@ def _personalize(account_id: int, name: str):
         dc.close()
 
 
+def update_account_name(account_id: int, name: str) -> None:
+    """Atualiza o nome da conta (fonte única da identidade exibida no app)."""
+    name = (name or "").strip()
+    if not name:
+        return
+    conn = get_auth_conn()
+    try:
+        _ensure(conn)
+        conn.execute("UPDATE accounts SET name=? WHERE id=?", (name, account_id))
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def login(email: str, password: str) -> dict:
     email = (email or "").strip().lower()
     conn = get_auth_conn()
@@ -145,6 +159,28 @@ def login(email: str, password: str) -> dict:
         token = _new_session(conn, row["id"])
         conn.commit()
         return {"token": token, "user": _account_dict(row)}
+    finally:
+        conn.close()
+
+
+def change_password(email: str, new: str) -> dict:
+    """Troca a senha só pelo e-mail + nova senha (sem confirmar a atual).
+    Nota: sem prova de posse — qualquer um que saiba o e-mail pode trocar."""
+    email = (email or "").strip().lower()
+    if len(new or "") < 6:
+        raise AuthError("A nova senha precisa de ao menos 6 caracteres.")
+    conn = get_auth_conn()
+    try:
+        _ensure(conn)
+        row = conn.execute("SELECT * FROM accounts WHERE email=?", (email,)).fetchone()
+        if not row:
+            raise AuthError("Não há conta com esse e-mail.")
+        conn.execute(
+            "UPDATE accounts SET password_hash=? WHERE id=?",
+            (_hash_password(new), row["id"]),
+        )
+        conn.commit()
+        return {"ok": True}
     finally:
         conn.close()
 

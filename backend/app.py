@@ -35,6 +35,7 @@ _PUBLIC_PATHS = {
     "/api/health",
     "/api/auth/register",
     "/api/auth/login",
+    "/api/auth/change-password",
     "/api/auth/callback",     # callback do OAuth Cumbuca (redirect de browser, sem token)
 }
 
@@ -78,6 +79,15 @@ def auth_login():
         return jsonify(error=str(e)), 401
 
 
+@app.post("/api/auth/change-password")
+def auth_change_password():
+    d = request.get_json(force=True) or {}
+    try:
+        return jsonify(auth.change_password(d.get("email"), d.get("new")))
+    except auth.AuthError as e:
+        return jsonify(error=str(e)), 400
+
+
 @app.get("/api/auth/me")
 def auth_me():
     return jsonify(user=g.account)
@@ -90,11 +100,34 @@ def auth_logout():
 
 
 # ----------------------- serialização -----------------------
+_WEEKDAYS_PT = ["segunda", "terça", "quarta", "quinta", "sexta", "sábado", "domingo"]
+_MONTHS_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho",
+              "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
+
+
+def _today_label(d=None):
+    """Rótulo do dia atual, ex.: 'segunda, 9 de junho'. Sempre o dia de hoje."""
+    d = d or date.today()
+    return f"{_WEEKDAYS_PT[d.weekday()]}, {d.day} de {_MONTHS_PT[d.month - 1]}"
+
+
+def _month_label(d=None):
+    d = d or date.today()
+    return _MONTHS_PT[d.month - 1].capitalize()
+
+
 def user_dict(r):
+    # identidade vem da CONTA autenticada (fonte única); o dia/mês são sempre hoje.
+    acct = getattr(g, "account", None)
+    full = (acct.get("name") if acct else None) or r["full_name"] or r["name"] or "Você"
+    parts = full.split()
+    first = parts[0] if parts else full
+    initials = ((parts[0][0] + (parts[1][0] if len(parts) > 1 else "")).upper()
+                if parts else "VC")
     return {
-        "name": r["name"], "fullName": r["full_name"], "initials": r["initials"],
+        "name": first, "fullName": full, "initials": initials,
         "age": r["age"], "job": r["job"], "salary": r["salary"], "bank": r["bank"],
-        "paydayDay": r["payday_day"], "todayLabel": r["today_label"], "monthLabel": r["month_label"],
+        "paydayDay": r["payday_day"], "todayLabel": _today_label(), "monthLabel": _month_label(),
     }
 
 
@@ -371,6 +404,7 @@ def _bootstrap(conn):
         "recurring": recurring,
         "recommendations": recos,
         "insight": insight,
+        "spendByCategory": _spend_by_category(conn),
     }
 
 
@@ -471,6 +505,24 @@ def _top_categories(conn, limit=6):
         (mp, mp, limit),
     ).fetchall()
     return [{"category": r["category"], "total": round(r["total"], 2)} for r in rows]
+
+
+def _spend_by_category(conn):
+    """Gasto do mês por categoria, conta + cartão combinados (todas as categorias).
+    Mesma fonte do donut e das barras de corte — bate 100% com o Cumbuca."""
+    mp = date.today().strftime("%Y-%m-") + "%"
+    cumbuca._ensure_card_table(conn)
+    rows = conn.execute(
+        """SELECT category, SUM(spend) AS total FROM (
+             SELECT category, -amount AS spend FROM transactions
+               WHERE amount < 0 AND created_at LIKE ?
+             UNION ALL
+             SELECT category, amount AS spend FROM card_transactions
+               WHERE amount > 0 AND created_at LIKE ?
+           ) GROUP BY category""",
+        (mp, mp),
+    ).fetchall()
+    return {r["category"]: round(r["total"], 2) for r in rows}
 
 
 def _card_txs(conn, limit=10):
@@ -915,6 +967,11 @@ def update_user():
         if sets:
             conn.execute(f"UPDATE user SET {', '.join(sets)} WHERE id=1", vals)
             conn.commit()
+        # identidade é servida a partir da CONTA: propaga edição de nome pra lá
+        new_name = d.get("fullName") or d.get("name")
+        if new_name and new_name.strip():
+            auth.update_account_name(g.account["id"], new_name.strip())
+            g.account["name"] = new_name.strip()
         return jsonify(user_dict(conn.execute("SELECT * FROM user WHERE id=1").fetchone()))
     finally:
         conn.close()

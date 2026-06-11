@@ -11,6 +11,7 @@ import {
 } from "./data/mock";
 import { useData } from "./store";
 import {
+  CategoryDonut,
   GoalsProgressChart,
   ProbRing,
   ProjectionChart,
@@ -84,8 +85,16 @@ export function OverviewPage({ go }: { go: Go }) {
   const spentPct = balance.income ? Math.round((balance.spent / balance.income) * 100) : 0;
   // Fechamento do mês = saldo final projetado (mesma fonte da aba Projeção e Saúde)
   const monthClose = projection.expected;
-  const scale = Math.max(118, spentPct + 12);
+  // Projeção do TOTAL que vai ser gasto no mês = renda - saldo projetado de fechamento
+  const projSpend = Math.max(0, balance.income - monthClose);
+  const projSpendPct = balance.income ? Math.round((projSpend / balance.income) * 100) : 0;
+  const scale = Math.max(118, spentPct + 12, projSpendPct + 12);
   const pos = (p: number) => (p / scale) * 100;
+  // alinhamento dos rótulos da barra: evita estourar a borda quando a marca
+  // fica perto do canto (ex.: projeção muito acima da renda)
+  const markPos = pos(projSpendPct);
+  const rendaPos = pos(100);
+  const markAlign = markPos > 62 ? "mark-left" : markPos < 24 ? "mark-right" : "";
   const focusVitals = health.vitals.filter((v) => ["fluxo", "cartao", "reserva"].includes(v.key));
 
   function openAdd() { setTxEdit(null); setTxOpen(true); }
@@ -195,7 +204,20 @@ export function OverviewPage({ go }: { go: Go }) {
         <div className="flow-bar">
           <span className="overzone" style={{ left: `${pos(100)}%` }} />
           <motion.i initial={{ width: 0 }} animate={{ width: `${pos(spentPct)}%` }} transition={{ duration: 1, ease: EASE, delay: 0.3 }} />
-          <span className="renda" style={{ left: `${pos(100)}%` }}><em>renda</em></span>
+          {/* % de projeção fixada no fim do preenchimento, sempre dentro do limite da barra */}
+          <motion.span
+            className="flow-pct"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1, left: `${pos(spentPct)}%` }}
+            transition={{ duration: 1, ease: EASE, delay: 0.3 }}
+          >
+            {spentPct}%
+          </motion.span>
+          <span className={`renda${rendaPos > 80 ? " renda-left" : ""}`} style={{ left: `${rendaPos}%` }}><em>renda</em></span>
+          {/* projeção do gasto total do mês (Monte Carlo) */}
+          <span className={`mark ${markAlign}`} style={{ left: `${markPos}%` }}>
+            <em>projeção {brl0(projSpend)} ({projSpendPct}%)</em>
+          </span>
         </div>
         <div className="flow-legend">
           <span className="lg"><i className="dot out" /> Gastou {spentPct}% da renda este mês</span>
@@ -257,7 +279,7 @@ export function OverviewPage({ go }: { go: Go }) {
    ============================================================ */
 export function HealthPage() {
   const { data } = useData();
-  const { health, recommendations } = data!;
+  const { health, recommendations, spendByCategory } = data!;
   const [open, setOpen] = useState<string | null>("cartao");
 
   // stats derivadas do histórico real (nada fixo) — seguro p/ histórico vazio
@@ -265,6 +287,20 @@ export function HealthPage() {
   const best = hist.length ? hist.reduce((a, b) => (b.v > a.v ? b : a), hist[0]) : null;
   const avg = hist.length ? Math.round(hist.reduce((s, h) => s + h.v, 0) / hist.length) : 0;
   const prev = hist.length > 1 ? hist[hist.length - 2] : null;
+
+  // gasto do mês por área, do backend (conta + cartão). Transferências contam como investimentos.
+  const CAT_COLORS = ["#1a7a4f", "#3a5bc7", "#b45309", "#bf4048", "#6f9e2e", "#0d9488", "#7c3aed", "#9c9b92"];
+  const catData = (() => {
+    const map: Record<string, number> = {};
+    for (const [cat, val] of Object.entries(spendByCategory ?? {})) {
+      if (val <= 0) continue;
+      const c = /transfer/i.test(cat) ? "Investimentos" : cat || "Outros";
+      map[c] = (map[c] || 0) + val;
+    }
+    return Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value], i) => ({ label, value, color: CAT_COLORS[i % CAT_COLORS.length] }));
+  })();
 
   return (
     <div className="page">
@@ -338,12 +374,16 @@ export function HealthPage() {
         </motion.div>
 
         <div className="span-5 grid" style={{ gap: 18, alignContent: "start" }}>
+          <motion.div {...fade(4)} className="panel">
+            <div className="panel-head"><h2>Análise por área de gasto</h2><span className="hint-cap">gasto do mês</span></div>
+            <CategoryDonut data={catData} />
+          </motion.div>
           <div className="panel-head" style={{ marginBottom: -6 }}>
-            <h2>Análise por área de gasto</h2>
-            <span className="hint-cap">gerada pela IA no último sync</span>
+            <h2>Sugestões da IA</h2>
+            <span className="hint-cap">gerada no último sync</span>
           </div>
           {recommendations.map((r, i) => (
-            <motion.div {...fade(4 + i)} className={`reco ${r.tone}`} key={r.id}>
+            <motion.div {...fade(5 + i)} className={`reco ${r.tone}`} key={r.id}>
               <div className="ic"><CatIcon name={r.icon} /></div>
               <h3>{r.title}</h3>
               <p>{r.text}</p>
@@ -492,7 +532,7 @@ export function GoalsPage() {
    ============================================================ */
 export function ProjectionPage() {
   const { data } = useData();
-  const { projection, levers, user, transactions, recurring, balance } = data!;
+  const { projection, levers, user, recurring, balance, spendByCategory } = data!;
 
   const [cuts, setCuts] = useState<Record<string, number>>({});
   const [catOpen, setCatOpen] = useState(false);
@@ -500,16 +540,10 @@ export function ProjectionPage() {
   const [recOpen, setRecOpen] = useState(false);
   const [recEdit, setRecEdit] = useState<Recurring | null>(null);
 
-  // gasto real do mês agrupado por ícone (= categoria)
-  const spentByIcon = useMemo(() => {
-    const thisMonth = new Date().toISOString().slice(0, 7);
-    return transactions
-      .filter((t) => t.amount < 0 && (!t.createdAt || t.createdAt.startsWith(thisMonth)))
-      .reduce<Record<string, number>>((acc, t) => {
-        acc[t.icon] = (acc[t.icon] || 0) + Math.abs(t.amount);
-        return acc;
-      }, {});
-  }, [transactions]);
+  // gasto real do mês por CATEGORIA, vindo do backend (conta + cartão combinados).
+  // Bate 100% com o Cumbuca — inclui gastos de cartão (ex.: delivery) que não vêm
+  // na lista de transações da conta.
+  const spentByCat = spendByCategory ?? {};
 
   // corte total somado de todas as categorias
   const totalCut = levers.reduce((a, l) => a + Math.min(cuts[l.id] || 0, l.current), 0);
@@ -602,7 +636,7 @@ export function ProjectionPage() {
           {levers.length === 0 && <div className="empty">Sem categorias. Adicione uma pra simular cortes.</div>}
 
           {levers.map((l) => {
-            const spent      = spentByIcon[l.icon] || 0;
+            const spent      = spentByCat[l.label] || 0;
             const budget     = l.current;
             const cut        = Math.min(cuts[l.id] || 0, Math.max(0, budget - spent));
             const sliderVal  = budget - cut;                          // projected spend

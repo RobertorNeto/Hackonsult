@@ -1,15 +1,13 @@
 // Landing page do Pulso - marketing/entrada do SaaS.
 // Stack do projeto: React + Motion + CSS nativo (classes .lp-*). Tema claro,
 // 1 accent (verde mint da marca). CTA único de entrada: "Entrar no Pulso".
-import { motion, useReducedMotion } from "motion/react";
-import { ScoreRing } from "./components/charts";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useEffect, useState } from "react";
 import {
   IconArrowDown,
-  IconArrowIn,
   IconBolt,
   IconChart,
   IconCheck,
-  IconFood,
   IconPulse,
   IconShield,
   IconSparkChat,
@@ -48,7 +46,7 @@ export default function LandingPage({ onEnter }: { onEnter: () => void }) {
         <button className="lp-btn lp-btn-primary lp-btn-sm" onClick={onEnter}>Entrar no Pulso</button>
       </header>
 
-      {/* ============ HERO (centralizado, celular embaixo) ============ */}
+      {/* ============ HERO (dobra limpa, centralizada — estilo Mobbin) ============ */}
       <section className="lp-hero">
         <div className="lp-mesh" aria-hidden />
         <motion.div
@@ -57,9 +55,11 @@ export default function LandingPage({ onEnter }: { onEnter: () => void }) {
           animate="show"
           variants={{ show: { transition: { staggerChildren: 0.08, delayChildren: 0.05 } } }}
         >
+          <motion.div variants={fadeUp(reduce)}>
+            <HeroIconCycle reduce={reduce} />
+          </motion.div>
           <motion.h1 className="lp-h1" variants={fadeUp(reduce)}>
-            Seu dinheiro com um <span className="lp-h1-glyph"><IconSparkChat /></span> copiloto
-            que <em>entende o mês inteiro</em>.
+            Seu dinheiro com um copiloto que <em>entende o mês inteiro</em>.
           </motion.h1>
           <motion.p className="lp-sub" variants={fadeUp(reduce)}>
             O Pulso lê suas transações reais via Open Finance, projeta como o mês vai fechar
@@ -68,81 +68,13 @@ export default function LandingPage({ onEnter }: { onEnter: () => void }) {
           <motion.div className="lp-hero-ctas" variants={fadeUp(reduce)}>
             <button className="lp-btn lp-btn-primary" onClick={onEnter}>Entrar no Pulso</button>
             <button className="lp-btn lp-btn-ghost" onClick={scrollTo("como-funciona")}>
-              Ver como funciona
+              Ver como funciona <IconArrowDown />
             </button>
-          </motion.div>
-        </motion.div>
-
-        {/* app aberto: mockup de celular com a UI real do Pulso + cards flutuantes */}
-        <motion.div
-          className="lp-hero-art"
-          initial={reduce ? false : { opacity: 0, y: 40 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.8, delay: 0.2, ease: EASE }}
-        >
-          <motion.div
-            className="lp-phone"
-            animate={reduce ? undefined : { y: [0, -10, 0] }}
-            transition={{ duration: 6.5, repeat: Infinity, ease: "easeInOut" }}
-          >
-            <div className="lp-phone-notch" />
-            <div className="lp-phone-screen">
-              <div className="lp-app-top">
-                <div className="lp-app-brand"><span className="lp-brand-mark sm"><IconBolt /></span>Pulso</div>
-                <span className="lp-app-av">LM</span>
-              </div>
-              <div className="lp-app-greet">Bom te ver, Lucas</div>
-              <div className="lp-app-ring">
-                <div className="ring-wrap" style={{ width: 156, height: 156 }}>
-                  <ScoreRing value={72} size={156} thickness={12} color="var(--mint)" />
-                  <div className="ring-center">
-                    <div className="big" style={{ fontSize: 44, color: "var(--mint)" }}>72</div>
-                    <div className="lbl" style={{ color: "var(--text-mute)" }}>saúde</div>
-                  </div>
-                </div>
-              </div>
-              <div className="lp-app-flow">
-                <div><span>Entrou</span><b className="in">R$ 3.731</b></div>
-                <div><span>Saiu</span><b className="out">R$ 3.708</b></div>
-              </div>
-              <div className="lp-app-tx">
-                <div className="lp-app-txrow">
-                  <span className="lp-app-txic"><IconFood /></span>
-                  <span className="lp-app-txname">iFood</span>
-                  <span className="lp-app-txval">- R$ 47,90</span>
-                </div>
-                <div className="lp-app-txrow">
-                  <span className="lp-app-txic mint"><IconArrowIn /></span>
-                  <span className="lp-app-txname">Pix recebido</span>
-                  <span className="lp-app-txval in">+ R$ 1.666</span>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* cards flutuantes (prova tangível, estilo app aberto) */}
-          <motion.div
-            className="lp-float lp-float-proj"
-            animate={reduce ? undefined : { y: [0, -14, 0] }}
-            transition={{ duration: 7, repeat: Infinity, ease: "easeInOut", delay: 0.4 }}
-          >
-            <span className="lp-float-k"><IconChart /> Projeção do mês</span>
-            <Sparkline />
-            <b>Fecha em <span className="mint">R$ 1.240</span></b>
-          </motion.div>
-
-          <motion.div
-            className="lp-float lp-float-chat"
-            animate={reduce ? undefined : { y: [0, 12, 0] }}
-            transition={{ duration: 6, repeat: Infinity, ease: "easeInOut", delay: 0.9 }}
-          >
-            <span className="lp-float-ic"><IconSparkChat /></span>
-            <span>“Vou fechar o mês no positivo?”</span>
           </motion.div>
         </motion.div>
       </section>
 
-      {/* ============ MARQUEE PARCEIROS (sob o hero) ============ */}
+      {/* ============ MARQUEE PARCEIROS (logo sob o hero) ============ */}
       <section className="lp-trust">
         <span className="lp-trust-lead">Dados reais, conexão regulada</span>
         <div className="lp-marquee" aria-label="Parceiros e padrões">
@@ -269,6 +201,74 @@ const fadeUp = (reduce: boolean | null) => ({
   hide: reduce ? {} : { opacity: 0, y: 22 },
   show: { opacity: 1, y: 0, transition: { duration: 0.6, ease: EASE } },
 });
+
+// ícone-app no topo do hero que cicla entre as marcas do ecossistema (estilo Mobbin)
+const HERO_BRANDS: { name: string; color: string; glyph: JSX.Element }[] = [
+  { name: "Pulso", color: "var(--mint)", glyph: <IconBolt /> },
+  {
+    name: "Cumbuca",
+    color: "#d14b42",
+    glyph: (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+        <path d="M3 10h18a9 9 0 0 1-18 0Z" fill="currentColor" />
+        <path d="M8 7c0-1.5 1.5-2.5 4-2.5s4 1 4 2.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    name: "Open Finance Brasil",
+    color: "#2b59c3",
+    glyph: (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+        <circle cx="9.4" cy="12" r="6.2" stroke="currentColor" strokeWidth="1.9" />
+        <circle cx="14.6" cy="12" r="6.2" stroke="currentColor" strokeWidth="1.9" opacity="0.55" />
+      </svg>
+    ),
+  },
+  {
+    name: "Banco Central",
+    color: "#1b3a5b",
+    glyph: (
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+        <path d="M12 3 21 8H3l9-5Z" fill="currentColor" />
+        <rect x="5" y="9.5" width="2" height="7" fill="currentColor" />
+        <rect x="11" y="9.5" width="2" height="7" fill="currentColor" />
+        <rect x="17" y="9.5" width="2" height="7" fill="currentColor" />
+        <rect x="3" y="18" width="18" height="2.2" rx="1" fill="currentColor" />
+      </svg>
+    ),
+  },
+];
+
+function HeroIconCycle({ reduce }: { reduce: boolean | null }) {
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (reduce) return;
+    const t = setInterval(() => setI((p) => (p + 1) % HERO_BRANDS.length), 3600);
+    return () => clearInterval(t);
+  }, [reduce]);
+  const b = HERO_BRANDS[i];
+  return (
+    <div className="lp-hero-deck" aria-label={`Ecossistema: ${b.name}`}>
+      {/* pilha/sombra atrás (deck estilo Mobbin) */}
+      <span className="lp-deck-ghost g2" aria-hidden />
+      <span className="lp-deck-ghost g1" aria-hidden />
+      <AnimatePresence initial={false}>
+        <motion.div
+          key={b.name}
+          className="lp-deck-card"
+          style={{ color: b.color }}
+          initial={reduce ? false : { y: -14, scale: 0.82, opacity: 0 }}
+          animate={{ y: 0, scale: 1, opacity: 1 }}
+          exit={reduce ? {} : { y: 26, scale: 1.22, opacity: 0 }}
+          transition={{ duration: 0.75, ease: EASE }}
+        >
+          {b.glyph}
+        </motion.div>
+      </AnimatePresence>
+    </div>
+  );
+}
 
 // logos dos parceiros (marcas geométricas próprias + wordmark, monocromático)
 function Lockup({ glyph, name }: { glyph: JSX.Element; name: string }) {

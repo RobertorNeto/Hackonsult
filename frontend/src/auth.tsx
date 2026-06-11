@@ -5,57 +5,11 @@
 import { useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { api, setToken, type AuthUser } from "./lib/api";
-import { ScoreRing } from "./components/charts";
 import {
-  IconArrowIn, IconChart, IconEye, IconEyeOff, IconFood, IconShield, IconSparkChat,
+  IconBolt, IconEye, IconEyeOff, IconShield,
 } from "./components/icons";
 
 type Mode = "login" | "register";
-
-// prints da plataforma (emulados) espalhados em diagonal no fundo
-function Prints() {
-  return (
-    <div className="glx-prints" aria-hidden>
-      <div className="glx-prints-rot">
-        <div className="glx-print p1">
-          <div className="gp-k">Saúde financeira</div>
-          <div className="gp-ring">
-            <div className="ring-wrap" style={{ width: 92, height: 92 }}>
-              <ScoreRing value={72} size={92} thickness={8} color="var(--mint)" glow={false} />
-              <div className="ring-center"><div className="big" style={{ fontSize: 26, color: "var(--mint)" }}>72</div></div>
-            </div>
-          </div>
-        </div>
-
-        <div className="glx-print p2 mint">
-          <div className="gp-k"><IconArrowIn /> Nova entrada</div>
-          <div className="gp-big">R$ 1.666</div>
-          <div className="gp-up">+13% no mês</div>
-        </div>
-
-        <div className="glx-print p3">
-          <div className="gp-k"><IconChart /> Projeção do mês</div>
-          <svg className="gp-spark" viewBox="0 0 200 60" preserveAspectRatio="none">
-            <path d="M0,44 C36,38 60,20 100,26 C140,32 168,12 200,18" fill="none" stroke="var(--mint)" strokeWidth="3" strokeLinecap="round" />
-            <path d="M0,44 C36,38 60,20 100,26 C140,32 168,12 200,18 L200,60 L0,60Z" fill="var(--mint)" opacity="0.12" />
-          </svg>
-          <div className="gp-foot">fecha em <b>R$ 1.240</b></div>
-        </div>
-
-        <div className="glx-print p4">
-          <div className="gp-k">Atividade</div>
-          <div className="gp-row"><span className="gp-ic"><IconFood /></span> iFood <b className="out">-47,90</b></div>
-          <div className="gp-row"><span className="gp-ic mint"><IconArrowIn /></span> Pix recebido <b className="in">+1.666</b></div>
-        </div>
-
-        <div className="glx-print p5">
-          <div className="gp-k">Gasto por categoria</div>
-          <div className="gp-bars"><i style={{ height: "70%" }} /><i style={{ height: "100%" }} /><i style={{ height: "45%" }} /><i style={{ height: "62%" }} /><i style={{ height: "30%" }} /></div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function AuthPage({
   mode,
@@ -71,18 +25,32 @@ export default function AuthPage({
   const reduce = useReducedMotion();
   const isLogin = mode === "login";
 
+  const [reset, setReset] = useState(false); // modo "trocar senha"
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPass, setNewPass] = useState("");
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
+
+  function toggleReset(on: boolean) {
+    setReset(on); setErr(null); setDone(null); setPassword(""); setNewPass("");
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setErr(null);
+    setDone(null);
     try {
+      if (reset) {
+        await api.changePassword(email.trim(), newPass);
+        setDone("Senha alterada! Entre com a nova senha.");
+        setReset(false); setPassword(""); setNewPass("");
+        return;
+      }
       const res = isLogin
         ? await api.login(email.trim(), password)
         : await api.register(name.trim(), email.trim(), password);
@@ -91,26 +59,14 @@ export default function AuthPage({
     } catch (e2: any) {
       const raw = String(e2?.message ?? e2);
       const m = raw.match(/\{.*"error"\s*:\s*"([^"]+)"/);
-      setErr(m ? m[1] : isLogin ? "Não foi possível entrar." : "Não foi possível criar a conta.");
+      setErr(m ? m[1] : reset ? "Não foi possível trocar a senha." : isLogin ? "Não foi possível entrar." : "Não foi possível criar a conta.");
     } finally {
       setBusy(false);
     }
   }
 
-  const Tab = ({ m, label }: { m: Mode; label: string }) => {
-    const active = mode === m;
-    return (
-      <button type="button" className={`glx-tab ${active ? "on" : ""}`} onClick={() => onSwitch(m)}>
-        {label}
-        {active && <motion.span layoutId="glx-tab-ind" className="glx-tab-ind"
-          transition={{ type: "spring", stiffness: 380, damping: 32 }} />}
-      </button>
-    );
-  };
-
   return (
     <div className="glx">
-      <Prints />
 
       <motion.div
         className="glx-card glass"
@@ -120,40 +76,26 @@ export default function AuthPage({
       >
         <button className="glx-x" onClick={onBack} aria-label="voltar">×</button>
 
-        <div className="glx-grid">
-          {/* lado esquerdo: convite sobre o vidro (prints borram atrás) */}
-          <div className="glx-aside">
-            <h2 className="glx-aside-h">Seu mês,<br /><em>com clareza</em>.</h2>
-            <p className="glx-aside-p">
-              Conecte seu banco e a IA do Pulso lê suas transações, projeta o mês e te diz o que fazer.
-            </p>
-            <div className="glx-aside-chips">
-              <span><IconChart /> Projeção Monte Carlo</span>
-              <span><IconSparkChat /> Assistente com IA</span>
-            </div>
-          </div>
+        <div className="glx-panel">
+          <div className="glx-logo" aria-hidden><IconBolt /></div>
+          <h1 className="glx-h">{reset ? "Trocar senha" : isLogin ? "Bem-vindo ao Pulso" : "Crie sua conta"}</h1>
+          <p className="glx-tag">{reset ? "Confirme com a senha atual e defina a nova." : "Seu copiloto financeiro inteligente."}</p>
 
-          {/* lado direito: formulário */}
-          <div className="glx-right">
-            <div className="glx-tabs">
-              <Tab m="login" label="Entrar" />
-              <Tab m="register" label="Criar conta" />
-            </div>
-
-            <form className="glx-form" onSubmit={submit}>
-              {!isLogin && (
-                <label className="glx-field">
-                  <span>Nome</span>
-                  <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Como devo te chamar?" autoFocus />
-                </label>
-              )}
+          <form className="glx-form" onSubmit={submit}>
+            {!isLogin && !reset && (
               <label className="glx-field">
-                <span>E-mail</span>
-                <input
-                  type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                  placeholder="voce@email.com" autoComplete="email" autoFocus={isLogin}
-                />
+                <span>Nome</span>
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Como devo te chamar?" autoFocus />
               </label>
+            )}
+            <label className="glx-field">
+              <span>E-mail</span>
+              <input
+                type="email" value={email} onChange={(e) => setEmail(e.target.value)}
+                placeholder="voce@email.com" autoComplete="email" autoFocus={isLogin}
+              />
+            </label>
+            {!reset && (
               <label className="glx-field">
                 <span>Senha</span>
                 <div className="glx-pass">
@@ -168,22 +110,45 @@ export default function AuthPage({
                   </button>
                 </div>
               </label>
+            )}
+            {reset && (
+              <label className="glx-field">
+                <span>Nova senha</span>
+                <div className="glx-pass">
+                  <input
+                    type={show ? "text" : "password"} value={newPass} onChange={(e) => setNewPass(e.target.value)}
+                    placeholder="Mínimo 6 caracteres" autoComplete="new-password"
+                  />
+                  <button type="button" className="glx-eye" onClick={() => setShow((s) => !s)}
+                    aria-label={show ? "ocultar senha" : "mostrar senha"}>
+                    {show ? <IconEyeOff /> : <IconEye />}
+                  </button>
+                </div>
+              </label>
+            )}
 
-              {err && <div className="glx-err">{err}</div>}
+            {err && <div className="glx-err">{err}</div>}
+            {done && <div className="glx-ok">{done}</div>}
 
-              <button type="submit" className="glx-submit" disabled={busy}>
-                {busy ? "Aguarde…" : isLogin ? "Entrar no Pulso" : "Criar minha conta"}
-              </button>
-            </form>
+            <button type="submit" className="glx-submit" disabled={busy}>
+              {busy ? "Aguarde…" : reset ? "Trocar senha" : isLogin ? "Entrar no Pulso" : "Criar minha conta"}
+            </button>
+          </form>
 
-            <p className="glx-switch">
-              {isLogin ? (
-                <>Ainda não tem conta? <button onClick={() => onSwitch("register")}>Criar conta</button></>
-              ) : (
-                <>Já tem conta? <button onClick={() => onSwitch("login")}>Entrar</button></>
-              )}
-            </p>
-          </div>
+          <p className="glx-switch">
+            {reset ? (
+              <>Lembrou a senha? <button onClick={() => toggleReset(false)}>Voltar ao login</button></>
+            ) : isLogin ? (
+              <>Ainda não tem conta? <button onClick={() => onSwitch("register")}>Criar conta</button></>
+            ) : (
+              <>Já tem conta? <button onClick={() => onSwitch("login")}>Entrar</button></>
+            )}
+          </p>
+          {isLogin && !reset && (
+            <button type="button" className="glx-reset-link" onClick={() => toggleReset(true)}>
+              Trocar senha
+            </button>
+          )}
         </div>
       </motion.div>
 
