@@ -64,6 +64,40 @@ def _digest(context: dict) -> str:
     return "\n".join(lines)
 
 
+_GOAL_SYS = (
+    "Você é um planejador financeiro do app Pulso (PT-BR). Com base nos gastos REAIS "
+    "calculados pela plataforma e na projeção de fim de mês, sugira ajustes CONCRETOS "
+    "para CADA meta: quanto guardar por mês (suggestedMonthly em R$) e de ONDE tirar "
+    "(qual categoria cortar, citando o valor). Seja realista com o caixa livre "
+    "(renda - gasto - fixos). NÃO invente números — use só os fornecidos. Valores em R$. "
+    'Responda em JSON: {"suggestions":[{"goal":"<nome exato da meta>","title":"<resumo curto>",'
+    '"text":"<1-2 frases>","suggestedMonthly":<número ou null>}],"summary":"<1 frase>"}'
+)
+
+
+def suggest_goals(payload: dict) -> dict:
+    """Sugere ajustes de metas via OpenAI (mesmo modelo do assistente). JSON estrito."""
+    if not os.environ.get("OPENAI_API_KEY"):
+        return {"error": "OPENAI_API_KEY ausente no .env."}
+    from openai import OpenAI
+    client = OpenAI()
+    try:
+        resp = client.chat.completions.create(
+            model=MODEL,
+            messages=[
+                {"role": "system", "content": _GOAL_SYS},
+                {"role": "user", "content": "DADOS DA PLATAFORMA (use só estes números):\n"
+                 + json.dumps(payload, ensure_ascii=False)},
+            ],
+            response_format={"type": "json_object"},
+            max_completion_tokens=900,
+        )
+        parsed = json.loads(resp.choices[0].message.content)
+        return {"suggestions": parsed.get("suggestions", []), "summary": parsed.get("summary")}
+    except Exception as e:
+        return {"error": f"{type(e).__name__}: {e}"}
+
+
 def answer(message: str, history: list[dict], context: dict) -> dict:
     """Chama o modelo. history = [{from:'user'|'bot', text}]. Retorna {reply} ou {error}."""
     if not os.environ.get("OPENAI_API_KEY"):

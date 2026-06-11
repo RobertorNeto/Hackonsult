@@ -96,6 +96,13 @@ export const api = {
   deleteGoal: (id: string) =>
     req<{ deleted: string }>(`/goals/${id}`, { method: "DELETE" }),
 
+  suggestGoals: () =>
+    req<{
+      suggestions: { goal: string; title: string; text: string; suggestedMonthly?: number | null }[];
+      summary?: string;
+      error?: string;
+    }>("/goals/suggest", { method: "POST" }),
+
   addLever: (lever: { label: string; current: number; icon?: string }) =>
     req<{ lever: Lever }>("/levers", { method: "POST", body: JSON.stringify(lever) }),
 

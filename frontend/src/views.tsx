@@ -419,11 +419,35 @@ export function HealthPage() {
 /* ============================================================
    3. METAS — progresso colorido + editar + resumo
    ============================================================ */
+type GoalSuggestion = { goal: string; title: string; text: string; suggestedMonthly?: number | null };
+
 export function GoalsPage() {
-  const { data, deleteGoal } = useData();
+  const { data, deleteGoal, editGoal } = useData();
   const { goals } = data!;
   const [goalOpen, setGoalOpen] = useState(false);
   const [goalEdit, setGoalEdit] = useState<Goal | null>(null);
+
+  // sugestões de ajuste de metas via Gemini (com base no gasto real calculado)
+  const [suggesting, setSuggesting] = useState(false);
+  const [sugErr, setSugErr] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<GoalSuggestion[] | null>(null);
+  const [sugSummary, setSugSummary] = useState<string | null>(null);
+
+  async function suggest() {
+    setSuggesting(true); setSugErr(null);
+    try {
+      const r = await api.suggestGoals();
+      if (r.error) { setSugErr(r.error); setSuggestions(null); }
+      else { setSuggestions(r.suggestions || []); setSugSummary(r.summary ?? null); }
+    } catch (e: any) {
+      setSugErr(String(e?.message ?? e));
+    } finally { setSuggesting(false); }
+  }
+
+  function applySuggestion(s: GoalSuggestion) {
+    const g = goals.find((x) => x.name === s.goal);
+    if (g && typeof s.suggestedMonthly === "number") editGoal(g.id, { monthlyCurrent: s.suggestedMonthly });
+  }
 
   function openAdd() { setGoalEdit(null); setGoalOpen(true); }
   function openEdit(g: Goal) { setGoalEdit(g); setGoalOpen(true); }
@@ -441,8 +465,43 @@ export function GoalsPage() {
       <PageHead
         kicker="onde você quer chegar"
         title="Metas"
-        right={<button className="btn btn-primary" onClick={openAdd}><span className="row" style={{ gap: 7 }}><IconPlus /> Nova meta</span></button>}
+        right={
+          <span className="row" style={{ gap: 8 }}>
+            {goals.length > 0 && (
+              <button className="btn btn-ghost" onClick={suggest} disabled={suggesting}>
+                {suggesting ? "Analisando…" : "✦ Sugerir com IA"}
+              </button>
+            )}
+            <button className="btn btn-primary" onClick={openAdd}><span className="row" style={{ gap: 7 }}><IconPlus /> Nova meta</span></button>
+          </span>
+        }
       />
+
+      {(sugErr || suggestions) && (
+        <motion.div {...fade(1)} className="panel sug-panel">
+          <div className="panel-head">
+            <h2>✦ Sugestões da IA</h2>
+            <button className="link" onClick={() => { setSuggestions(null); setSugErr(null); }}>fechar</button>
+          </div>
+          {sugErr && <div className="glx-err" style={{ color: "var(--coral)" }}>{sugErr}</div>}
+          {suggestions && sugSummary && <p className="chart-note" style={{ marginTop: 0 }}>{sugSummary}</p>}
+          {suggestions && suggestions.map((s, i) => (
+            <div className="sug-item" key={i}>
+              <div className="sug-info">
+                <b>{s.goal}</b>
+                <span className="sug-title">{s.title}</span>
+                <p>{s.text}</p>
+              </div>
+              {typeof s.suggestedMonthly === "number" && (
+                <button className="btn-sm btn-mint" onClick={() => applySuggestion(s)}>
+                  Aplicar {brl0(s.suggestedMonthly)}/mês
+                </button>
+              )}
+            </div>
+          ))}
+          {suggestions && suggestions.length === 0 && <div className="empty">Sem sugestões no momento.</div>}
+        </motion.div>
+      )}
 
       {goals.length === 0 && (
         <motion.div {...fade(1)} className="panel" style={{ textAlign: "center", padding: 40 }}>

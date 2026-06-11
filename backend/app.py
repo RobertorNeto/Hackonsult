@@ -834,6 +834,40 @@ def delete_goal(goal_id):
         conn.close()
 
 
+@app.post("/api/goals/suggest")
+def suggest_goals():
+    """Sugere ajustes nas metas via Gemini, com base no gasto REAL calculado."""
+    conn = get_conn()
+    try:
+        goals = [goal_dict(g) for g in conn.execute(
+            "SELECT * FROM goals ORDER BY created_at, rowid").fetchall()]
+        if not goals:
+            return jsonify(suggestions=[], summary="Você ainda não tem metas para ajustar.")
+        bal = _balance_real(conn)
+        proj = _compute_projection(conn)
+        spend = _spend_by_category(conn)
+        rec = conn.execute(
+            "SELECT COALESCE(SUM(amount),0) s FROM recurring WHERE active=1").fetchone()["s"]
+        renda = bal.get("income") or 0
+        gasto = bal.get("spent") or 0
+        payload = {
+            "rendaMensal": renda,
+            "gastoMes": gasto,
+            "gastosFixosMes": round(rec, 2),
+            "caixaLivreEstimado": round(renda - gasto, 2),
+            "saldoProjetadoFimMes": proj.get("expected"),
+            "gastoPorCategoria": spend,
+            "metas": [{
+                "nome": g["name"], "alvo": g["target"], "jaGuardado": g["saved"],
+                "mesesRestantes": g["monthsLeft"], "guardarPorMesNecessario": g["monthlyNeeded"],
+                "guardandoHoje": g["monthlyCurrent"], "probabilidade": g["probability"],
+            } for g in goals],
+        }
+        return jsonify(assistant.suggest_goals(payload))
+    finally:
+        conn.close()
+
+
 def recurring_dict(r):
     return {
         "id": r["id"], "label": r["label"], "icon": r["icon"],

@@ -423,6 +423,14 @@ input, select { font-family: inherit; }
 .cc-bar i { display: block; height: 100%; border-radius: 999px; transition: width 0.6s var(--ease); }
 .cc-foot { display: flex; justify-content: space-between; gap: 12px; font-size: 12.5px; color: var(--text-mute); }
 
+/* ===== sugestões de metas (Gemini) ===== */
+.sug-item { display: flex; align-items: flex-start; gap: 12px; padding: 13px 0; border-top: 1px solid var(--line-soft); }
+.sug-info { flex: 1; min-width: 0; }
+.sug-info b { font-size: 14px; }
+.sug-title { display: block; font-size: 12.5px; color: var(--mint-2); font-weight: 600; margin: 2px 0 4px; }
+.sug-info p { font-size: 13px; color: var(--text-dim); line-height: 1.45; }
+.sug-item .btn-mint { flex: none; align-self: center; white-space: nowrap; }
+
 /* ===================== INSIGHT ===================== */
 .insight-banner {
   display: flex; align-items: center; gap: 16px;
