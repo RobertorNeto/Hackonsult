@@ -6,6 +6,7 @@ import { useData } from "../store";
 import { ICON_OPTIONS } from "./caticon";
 import { GoalSim } from "./charts";
 import { brl0, type Goal, type Lever, type Recurring, type Tx } from "../data/mock";
+import { api, type BankStatus } from "../lib/api";
 
 const EASE = [0.22, 1, 0.36, 1] as const;
 const num = (s: string) => Number(String(s).replace(/\./g, "").replace(",", ".")) || 0;
@@ -530,6 +531,240 @@ export function RecurringModal({
   );
 }
 
+/* ---------- sincronizar banco (confirmação → sync → análise IA) ---------- */
+export function SyncModal({
+  open,
+  onClose,
+  onDone,
+  bankName,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onDone: () => void;
+  bankName?: string | null;
+}) {
+  const { reload } = useData();
+  const [stage, setStage] = useState<"confirm" | "sync" | "ai" | "done" | "error">("confirm");
+  const [summary, setSummary] = useState<string[]>([]);
+  const [err, setErr] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) { setStage("confirm"); setSummary([]); setErr(null); }
+  }, [open]);
+
+  async function start() {
+    setStage("sync"); setErr(null);
+    try {
+      const s = await api.bankSync();
+      if (!s.ok) { setErr(s.error ?? "Falha na sincronização."); setStage("error"); return; }
+      const lines = [
+        `${s.imported ?? 0} transações da conta importadas`,
+        ...(s.card?.cards
+          ? [`Cartão: ${s.card.cardName ?? "encontrado"} · ${s.card.billTxs} compras na fatura`]
+          : []),
+        `Saldo atualizado: R$ ${s.balance ?? "—"}`,
+        ...(s.levers ? [`${s.levers} categorias de corte recalculadas`] : []),
+      ];
+      setStage("ai");
+      const a = await api.analyze();
+      if (a.ok) lines.push(`IA reavaliou sua saúde: score ${a.score} (${a.zone})`);
+      else lines.push(`Análise da IA falhou: ${a.error}`);
+      setSummary(lines);
+      reload();          // app inteiro recarrega com dado real
+      onDone();
+      setStage("done");
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+      setStage("error");
+    }
+  }
+
+  const busy = stage === "sync" || stage === "ai";
+
+  return (
+    <Modal
+      open={open}
+      onClose={busy ? () => {} : onClose}
+      title="Sincronizar com seu banco"
+      subtitle="Open Finance via Cumbuca · dados reais entram no app."
+    >
+      <div className="form">
+        {stage === "confirm" && (
+          <>
+            {bankName && (
+              <div className="sync-bank">
+                <span className="sync-bank-dot" /> Conta conectada: <b>{bankName}</b>
+              </div>
+            )}
+            <p style={{ margin: 0, fontSize: 14, lineHeight: 1.55 }}>
+              O Pulso vai buscar no seu banco, com o seu consentimento já autorizado:
+            </p>
+            <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 14, lineHeight: 1.7 }}>
+              <li>Saldo atual da conta</li>
+              <li>Transações dos últimos 7 dias</li>
+              <li>Cartão de crédito: fatura e compras</li>
+            </ul>
+            <p className="field-hint">
+              Depois, a IA reanalisa sua saúde financeira com os números reais.
+              Consome algumas requisições da sua cota mensal do Open Finance — por isso pedimos confirmação.
+            </p>
+            <div className="form-actions">
+              <button type="button" className="btn btn-ghost" onClick={onClose}>Agora não</button>
+              <button type="button" className="btn btn-primary" onClick={start}>Sincronizar agora</button>
+            </div>
+          </>
+        )}
+
+        {busy && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "8px 0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span className="typing" style={{ display: "inline-flex" }}><i /><i /><i /></span>
+              <b style={{ fontSize: 14 }}>
+                {stage === "sync" ? "Buscando seus dados no banco…" : "IA analisando sua saúde financeira…"}
+              </b>
+            </div>
+            <p className="field-hint">
+              {stage === "sync"
+                ? "Saldo, transações e cartão via Open Finance."
+                : "gpt-5.4-mini lendo seus números reais + projeção Monte Carlo."}
+            </p>
+          </div>
+        )}
+
+        {stage === "done" && (
+          <>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14, lineHeight: 1.8 }}>
+              {summary.map((l) => <li key={l}>{l}</li>)}
+            </ul>
+            <div className="form-actions">
+              <button type="button" className="btn btn-primary" onClick={onClose}>Ver meu painel</button>
+            </div>
+          </>
+        )}
+
+        {stage === "error" && (
+          <>
+            <ErrorMsg msg={err} />
+            <div className="form-actions">
+              <button type="button" className="btn btn-ghost" onClick={onClose}>Fechar</button>
+              <button type="button" className="btn btn-primary" onClick={start}>Tentar de novo</button>
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+/* ---------- conexão bancária Cumbuca (status / trocar / desconectar) ---------- */
+export function BankModal({
+  open,
+  onClose,
+  status,
+  onChanged,
+}: {
+  open: boolean;
+  onClose: () => void;
+  status: BankStatus | null;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState<"" | "load" | "reset">("");
+  const [err, setErr] = useState<string | null>(null);
+  const [verdict, setVerdict] = useState<string | null>(null);
+
+  useEffect(() => { if (open) { setErr(null); setVerdict(null); } }, [open]);
+
+  // NÃO puxa contas ao abrir: list_accounts/get_account = 8 req/mês/usuário.
+  // Mostra o cache do /status (custo zero). Só consulta o MCP sob clique explícito.
+  function refreshAccounts() {
+    setBusy("load"); setErr(null); setVerdict(null);
+    api.bankAccounts()
+      .then((r) => { setVerdict(r.verdict ?? null); if (!r.ok) setErr(r.verdict ?? "Falha ao ler contas."); })
+      .catch((e) => setErr(String(e?.message ?? e)))
+      .finally(() => { setBusy(""); onChanged(); });
+  }
+
+  const accounts = status?.accounts?.filter((a) => a.institution || a.number || a.name) ?? [];
+  const since = status?.obtainedAt ? status.obtainedAt.replace("T", " ").slice(0, 16) : null;
+
+  async function reset() {
+    setBusy("reset"); setErr(null);
+    try {
+      await api.bankDisconnect();
+      onChanged();
+      onClose();
+    } catch (e: any) {
+      setErr(String(e?.message ?? e));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="Conexão bancária" subtitle="Open Finance via Cumbuca.">
+      <div className="form">
+        <div className="field" style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+          <span
+            style={{
+              width: 9, height: 9, borderRadius: "50%",
+              background: status?.connected ? "#2ecc71" : "#e5484d",
+            }}
+          />
+          <span className="field-k" style={{ marginBottom: 0 }}>
+            {status?.connected ? "Conectado" : "Desconectado"}
+          </span>
+        </div>
+
+        {since && <p className="field-hint">Autorizado em {since}.</p>}
+
+        {accounts.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 4 }}>
+            {accounts.map((a, i) => (
+              <div key={i} style={{ padding: "10px 12px", border: "1px solid var(--line,#2a2a2a)", borderRadius: 10 }}>
+                <b>{a.institution || "Conta"}</b>
+                <div style={{ fontSize: 13, opacity: 0.8 }}>
+                  {[a.name, a.number].filter(Boolean).join(" · ") || a.id}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {status?.connected && accounts.length === 0 && !err && (
+          <p className="field-hint">Conectado. Toque em "Atualizar dados" pra ler as contas (consome cota mensal).</p>
+        )}
+
+        {verdict && !err && <p className="field-hint">{verdict}</p>}
+
+        <button
+          type="button" className="btn btn-ghost btn-sm" style={{ alignSelf: "flex-start" }}
+          onClick={refreshAccounts} disabled={!!busy || !status?.connected}
+        >
+          {busy === "load" ? "Lendo no banco…" : "Atualizar dados (1 req/mês)"}
+        </button>
+
+        <ErrorMsg msg={err} />
+
+        <div className="form-actions">
+          <button
+            type="button" className="btn btn-ghost danger" style={{ marginRight: "auto" }}
+            onClick={reset} disabled={!!busy}
+          >
+            {busy === "reset" ? "Desconectando…" : "Desconectar"}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Fechar</button>
+          <button
+            type="button" className="btn btn-primary"
+            onClick={() => { api.bankConnectUrl().then((r) => { window.location.href = r.url; }).catch(() => {}); }} disabled={!!busy}
+          >
+            Trocar banco
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 /* ---------- editar perfil (inclui renda e configurações financeiras) ---------- */
 export function EditProfileModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data, updateUser, updateBalance } = useData();
@@ -541,11 +776,12 @@ export function EditProfileModal({ open, onClose }: { open: boolean; onClose: ()
   const [job, setJob] = useState("");
   const [age, setAge] = useState("");
 
-  // configurações financeiras
+  // configurações financeiras (renda, fatura, limite e vencimento = manuais;
+  // saldo em conta vem do cache do banco e é só leitura)
   const [income, setIncome] = useState("");
   const [paydayDay, setPaydayDay] = useState("");
-  const [checking, setChecking] = useState("");
   const [creditUsed, setCreditUsed] = useState("");
+  const [creditLimit, setCreditLimit] = useState("");
   const [creditDueDay, setCreditDueDay] = useState("");
 
   const [busy, setBusy] = useState(false);
@@ -556,10 +792,10 @@ export function EditProfileModal({ open, onClose }: { open: boolean; onClose: ()
       setFullName(u.fullName);
       setJob(u.job);
       setAge(String(u.age));
-      setIncome(String(b.income).replace(".", ","));
+      setIncome(String(u.salary).replace(".", ","));
       setPaydayDay(String(u.paydayDay));
-      setChecking(String(b.checking).replace(".", ","));
       setCreditUsed(String(b.creditUsed).replace(".", ","));
+      setCreditLimit(String(b.creditLimit).replace(".", ","));
       setCreditDueDay(String(b.creditDueDay));
       setErr(null);
     }
@@ -572,8 +808,8 @@ export function EditProfileModal({ open, onClose }: { open: boolean; onClose: ()
     const initials = (parts[0][0] + (parts[1]?.[0] ?? "")).toUpperCase();
     const inc        = num(income);
     const pday       = Math.max(1, Math.min(31, Number(paydayDay) || u!.paydayDay));
-    const check      = num(checking);
     const credUsed   = num(creditUsed);
+    const credLimit  = num(creditLimit);
     const credDueDay = Math.max(1, Math.min(31, Number(creditDueDay) || b!.creditDueDay));
     setBusy(true); setErr(null);
     try {
@@ -583,10 +819,10 @@ export function EditProfileModal({ open, onClose }: { open: boolean; onClose: ()
         salary: inc || u?.salary,
         paydayDay: pday,
       });
+      // saldo em conta NÃO é editável: vem do cache da sincronização bancária
       await updateBalance({
-        income:       inc      || b?.income,
-        checking:     check    || b?.checking,
         creditUsed:   credUsed,
+        creditLimit:  credLimit || b?.creditLimit,
         creditDueDay: credDueDay,
       });
       onClose();
@@ -625,18 +861,26 @@ export function EditProfileModal({ open, onClose }: { open: boolean; onClose: ()
             <input value={paydayDay} onChange={(e) => setPaydayDay(e.target.value)} placeholder="5" inputMode="numeric" />
           </Field>
         </div>
-        <Field label="Saldo em conta (R$)">
-          <input value={checking} onChange={(e) => setChecking(e.target.value)} placeholder="1284" inputMode="decimal" />
+        <Field label="Saldo em conta (sincronizado do banco)">
+          <input
+            value={`R$ ${String(b?.checking ?? "—").replace(".", ",")}`}
+            disabled readOnly
+            style={{ opacity: 0.65, cursor: "not-allowed" }}
+          />
         </Field>
+        <p className="field-hint">O saldo vem da última sincronização com seu banco — não é editável.</p>
         <div className="field-row">
           <Field label="Fatura atual do cartão (R$)">
             <input value={creditUsed} onChange={(e) => setCreditUsed(e.target.value)} placeholder="1870" inputMode="decimal" />
           </Field>
-          <Field label="Dia de vencimento">
-            <input value={creditDueDay} onChange={(e) => setCreditDueDay(e.target.value)} placeholder="15" inputMode="numeric" />
+          <Field label="Limite do cartão (R$)">
+            <input value={creditLimit} onChange={(e) => setCreditLimit(e.target.value)} placeholder="6000" inputMode="decimal" />
           </Field>
         </div>
-        <p className="field-hint">Saldo e fatura são usados na simulação de projeção do mês.</p>
+        <Field label="Dia de vencimento da fatura">
+          <input value={creditDueDay} onChange={(e) => setCreditDueDay(e.target.value)} placeholder="15" inputMode="numeric" />
+        </Field>
+        <p className="field-hint">Fatura, limite e vencimento são manuais e entram na projeção do mês.</p>
 
         <ErrorMsg msg={err} />
         <div className="form-actions">

@@ -8,7 +8,17 @@ dist/
 backend/.venv/
 __pycache__/
 *.pyc
-# pulso.db versionado de propósito (dados de demo pro pessoal ver)
+
+# secrets
+.env
+*.env
+!.env.example
+# bancos com segredos (hash de senha, tokens de sessão e do banco) + órfão antigo
+*.db
+*.db-journal
+backend/pulso_auth.db
+backend/data/
 
 # os
 .DS_Store
+backend/pulso.db

@@ -1,16 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useData } from "./store";
+import { api, clearToken, getToken, type AuthUser } from "./lib/api";
 import {
   IconBell,
   IconBolt,
   IconChart,
   IconGrid,
+  IconLogout,
   IconPulse,
   IconSparkChat,
   IconTarget,
 } from "./components/icons";
 import { EditProfileModal } from "./components/modals";
+import LandingPage from "./landing";
+import AuthPage from "./auth";
 import {
   AssistantPage,
   GoalsPage,
@@ -33,7 +37,46 @@ export default function App() {
   const { data, loading, error, reload } = useData();
   const [tab, setTab] = useState<Tab>("overview");
   const [editOpen, setEditOpen] = useState(false);
+  const [view, setView] = useState<"landing" | "login" | "register" | "app">("landing");
+  const [account, setAccount] = useState<AuthUser | null>(null);
   const go = (t: string) => setTab(t as Tab);
+
+  // sessão existente? valida o token no mount (não entra sozinho na plataforma)
+  useEffect(() => {
+    if (!getToken()) return;
+    api.me().then((r) => setAccount(r.user)).catch(() => clearToken());
+  }, []);
+
+  function enterApp(u: AuthUser) {
+    setAccount(u);
+    reload();              // busca o bootstrap agora que há token
+    setView("app");
+  }
+  function onLandingEnter() {
+    if (account) enterApp(account);   // já logado → direto pra plataforma
+    else setView("login");
+  }
+  function logout() {
+    api.logout().catch(() => {});
+    clearToken();
+    setAccount(null);
+    reload();              // limpa os dados (sem token o store zera)
+    setView("landing");
+  }
+
+  if (view === "landing") {
+    return <LandingPage onEnter={onLandingEnter} />;
+  }
+  if (view === "login" || view === "register") {
+    return (
+      <AuthPage
+        mode={view}
+        onAuthed={enterApp}
+        onSwitch={(m) => setView(m)}
+        onBack={() => setView("landing")}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -90,6 +133,7 @@ export default function App() {
         <div className="actions">
           <button className="icon-btn" aria-label="notificações"><IconBell /><span className="ping" /></button>
           <button className="avatar" title="Editar perfil" onClick={() => setEditOpen(true)}>{user.initials}</button>
+          <button className="icon-btn" title="Sair" aria-label="sair" onClick={logout}><IconLogout /></button>
         </div>
       </header>
 

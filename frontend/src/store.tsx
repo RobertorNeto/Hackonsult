@@ -1,7 +1,7 @@
 // Store global: carrega o bootstrap do backend e expõe dados + ações.
 // Mantém a UI síncrona (os componentes leem do contexto, não do mock).
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { api } from "./lib/api";
+import { api, getToken } from "./lib/api";
 import type { Balance, Bootstrap, Goal, Recurring, Tx, User } from "./data/mock";
 
 type AddTx = {
@@ -66,6 +66,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
+    // sem sessão não busca dados (endpoints protegidos): evita 401 na landing/login
+    if (!getToken()) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     api

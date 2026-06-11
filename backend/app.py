@@ -12,13 +12,81 @@ import statistics
 import time
 from datetime import date, datetime, timedelta
 
-from flask import Flask, jsonify, request
+from dotenv import load_dotenv
+from flask import Flask, g, jsonify, redirect, request
 from flask_cors import CORS
 
+# .env fica na raiz do projeto (um nível acima de backend/)
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
+import analysis
+import assistant
+import auth
+import cumbuca
 from db import get_conn, init_db
 
 app = Flask(__name__)
 CORS(app)
+
+
+# ----------------------- auth gate -----------------------
+# Rotas públicas (sem token). O resto de /api exige sessão válida.
+_PUBLIC_PATHS = {
+    "/api/health",
+    "/api/auth/register",
+    "/api/auth/login",
+    "/api/auth/callback",     # callback do OAuth Cumbuca (redirect de browser, sem token)
+}
+
+
+def _bearer_token():
+    h = request.headers.get("Authorization", "")
+    if h.startswith("Bearer "):
+        return h[7:].strip()
+    return request.headers.get("X-Auth-Token") or None
+
+
+@app.before_request
+def _auth_gate():
+    p = request.path
+    if not p.startswith("/api/") or request.method == "OPTIONS":
+        return None
+    if p in _PUBLIC_PATHS:
+        return None
+    acct = auth.account_for_token(_bearer_token())
+    if not acct:
+        return jsonify(error="não autenticado"), 401
+    g.account = acct
+    return None
+
+
+@app.post("/api/auth/register")
+def auth_register():
+    d = request.get_json(force=True) or {}
+    try:
+        return jsonify(auth.register(d.get("name"), d.get("email"), d.get("password"))), 201
+    except auth.AuthError as e:
+        return jsonify(error=str(e)), 400
+
+
+@app.post("/api/auth/login")
+def auth_login():
+    d = request.get_json(force=True) or {}
+    try:
+        return jsonify(auth.login(d.get("email"), d.get("password")))
+    except auth.AuthError as e:
+        return jsonify(error=str(e)), 401
+
+
+@app.get("/api/auth/me")
+def auth_me():
+    return jsonify(user=g.account)
+
+
+@app.post("/api/auth/logout")
+def auth_logout():
+    auth.logout(_bearer_token())
+    return jsonify(ok=True)
 
 
 # ----------------------- serialização -----------------------
@@ -104,11 +172,29 @@ def _compute_projection(conn):
     rec_items: list[tuple[int, float]] = [(int(r["day_of_month"]), float(r["amount"])) for r in rec_rows]
 
     checking    = float(b["checking"])
-    spent       = float(b["spent"])       # total gasto no mês (positivo)
-    income      = float(b["income"])      # total recebido no mês (positivo)
+    # Entradas/saídas do mês derivadas do histórico de transações (fonte única
+    # de verdade — balance.income/spent são campos manuais do perfil).
+    _mp = today.strftime("%Y-%m-") + "%"
+    _fl = conn.execute(
+        """SELECT
+             COALESCE(SUM(CASE WHEN amount > 0 THEN amount END), 0) AS inflow,
+             COALESCE(SUM(CASE WHEN amount < 0 THEN -amount END), 0) AS outflow
+           FROM transactions WHERE created_at LIKE ?""",
+        (_mp,),
+    ).fetchone()
+    spent       = float(_fl["outflow"])   # total gasto no mês (positivo)
+    income      = float(_fl["inflow"])    # total recebido no mês (positivo)
     credit_used = float(b["credit_used"])
     credit_due  = int(b["credit_due_day"])
     salary      = float(u["salary"])
+
+    # RNG DETERMINÍSTICO: a projeção é estável entre chamadas/telas e só muda
+    # quando os dados mudam (saldo, fluxo, fatura, dia, nº de transações).
+    # Sem isso, cada GET re-sorteava 1000 sims → expected dançava entre views.
+    n_tx = conn.execute("SELECT COUNT(*) c FROM transactions").fetchone()["c"]
+    seed_val = int(round(checking * 100) + round(income * 100) + round(spent * 100)
+                   + round(credit_used * 100)) + today.toordinal() * 7 + n_tx
+    rng = random.Random(seed_val)
     payday      = int(u["payday_day"])
 
     days_elapsed = today_index + 1
@@ -143,7 +229,7 @@ def _compute_projection(conn):
         cv2     = (std_daily / mean_daily) ** 2
         sig_ln  = math.sqrt(math.log(1.0 + cv2))
         mu_ln   = math.log(mean_daily) - sig_ln ** 2 / 2.0
-        sample_spend = lambda: random.lognormvariate(mu_ln, sig_ln)
+        sample_spend = lambda: rng.lognormvariate(mu_ln, sig_ln)
     else:
         sample_spend = lambda: 0.0
 
@@ -198,8 +284,8 @@ def _compute_projection(conn):
                     bal -= rec_amt
             bal -= sample_spend()
             # emergência: Bernoulli(p_emerg_day) → valor Exponencial(mean_emergency)
-            if random.random() < p_emerg_day:
-                bal -= random.expovariate(1.0 / mean_emergency)
+            if rng.random() < p_emerg_day:
+                bal -= rng.expovariate(1.0 / mean_emergency)
             path.append(bal)
         future_paths.append(path)
 
@@ -276,7 +362,7 @@ def _bootstrap(conn):
         "SELECT * FROM recurring ORDER BY day_of_month, created_at").fetchall()]
     return {
         "user": user_dict(conn.execute("SELECT * FROM user WHERE id=1").fetchone()),
-        "balance": balance_dict(conn.execute("SELECT * FROM balance WHERE id=1").fetchone()),
+        "balance": _balance_real(conn),
         "health": health,
         "goals": [goal_dict(g) for g in conn.execute("SELECT * FROM goals ORDER BY created_at, rowid").fetchall()],
         "transactions": [tx_dict(t) for t in conn.execute("SELECT * FROM transactions ORDER BY created_at DESC, rowid DESC").fetchall()],
@@ -301,6 +387,168 @@ def get_projection():
 @app.get("/api/health")
 def healthcheck():
     return jsonify(ok=True)
+
+
+# ----------------------- Cumbuca MCP (OAuth connect, por conta) -----------------------
+@app.get("/api/bank/connect-url")
+def bank_connect_url():
+    """Autenticado: gera a URL de consent vinculada à conta atual (via state central)."""
+    return jsonify(url=cumbuca.build_authorization_url(g.account["id"]))
+
+
+@app.get("/api/auth/callback")
+def bank_callback():
+    """Recebe o code da Cumbuca (público, sem token) e grava na conta dona do state."""
+    err = request.args.get("error")
+    if err:
+        return redirect(f"{cumbuca.FRONTEND_URL}/?bank=error&msg={err}", code=302)
+    code = request.args.get("code")
+    state = request.args.get("state")
+    if not code or not state:
+        return redirect(f"{cumbuca.FRONTEND_URL}/?bank=error&msg=missing_code", code=302)
+    try:
+        cumbuca.exchange_code(code, state)
+        return redirect(f"{cumbuca.FRONTEND_URL}/?bank=connected", code=302)
+    except Exception as e:
+        return redirect(f"{cumbuca.FRONTEND_URL}/?bank=error&msg={e}", code=302)
+
+
+@app.get("/api/bank/status")
+def bank_status():
+    return jsonify(cumbuca.status())
+
+
+@app.get("/api/bank/accounts")
+def bank_accounts():
+    """A PROVA: tenta chamar as tools do MCP com Bearer puro e devolve o trace."""
+    return jsonify(cumbuca.probe_accounts())
+
+
+@app.delete("/api/bank/disconnect")
+def bank_disconnect():
+    return jsonify(cumbuca.disconnect())
+
+
+@app.post("/api/bank/sync")
+def bank_sync():
+    """Puxa saldo + transações reais do MCP e injeta no Pulso. Consome cota — só sob clique."""
+    return jsonify(cumbuca.sync())
+
+
+# ----------------------- Assistente (OpenAI + contexto Monte Carlo) -----------------------
+def _month_flows(conn) -> tuple[float, float]:
+    """(entrou, saiu) do mês corrente, derivados do histórico de transações.
+    Fonte ÚNICA de verdade — usada por bootstrap, projeção, análise e chat."""
+    mp = date.today().strftime("%Y-%m-") + "%"
+    r = conn.execute(
+        """SELECT COALESCE(SUM(CASE WHEN amount > 0 THEN amount END), 0) AS inflow,
+                  COALESCE(SUM(CASE WHEN amount < 0 THEN -amount END), 0) AS outflow
+           FROM transactions WHERE created_at LIKE ?""",
+        (mp,),
+    ).fetchone()
+    return round(r["inflow"], 2), round(r["outflow"], 2)
+
+
+def _balance_real(conn) -> dict:
+    """balance com income/spent derivados do histórico (não os campos stale da tabela)."""
+    b = balance_dict(conn.execute("SELECT * FROM balance WHERE id=1").fetchone())
+    b["income"], b["spent"] = _month_flows(conn)
+    return b
+
+
+def _top_categories(conn, limit=6):
+    """Gasto por categoria do mês: conta + cartão combinados."""
+    mp = date.today().strftime("%Y-%m-") + "%"
+    cumbuca._ensure_card_table(conn)
+    rows = conn.execute(
+        """SELECT category, SUM(spend) AS total FROM (
+             SELECT category, -amount AS spend FROM transactions
+               WHERE amount < 0 AND created_at LIKE ?
+             UNION ALL
+             SELECT category, amount AS spend FROM card_transactions
+               WHERE amount > 0 AND created_at LIKE ?
+           ) GROUP BY category ORDER BY total DESC LIMIT ?""",
+        (mp, mp, limit),
+    ).fetchall()
+    return [{"category": r["category"], "total": round(r["total"], 2)} for r in rows]
+
+
+def _card_txs(conn, limit=10):
+    cumbuca._ensure_card_table(conn)
+    rows = conn.execute(
+        "SELECT * FROM card_transactions ORDER BY created_at DESC LIMIT ?", (limit,)
+    ).fetchall()
+    return [{"when": t["when_label"], "merchant": t["merchant"],
+             "category": t["category"], "amount": t["amount"]} for t in rows]
+
+
+def _build_assistant_context(conn) -> dict:
+    u = conn.execute("SELECT * FROM user WHERE id=1").fetchone()
+    # transações recentes (compactas)
+    tx_rows = conn.execute(
+        "SELECT * FROM transactions ORDER BY created_at DESC, rowid DESC LIMIT 15"
+    ).fetchall()
+    transactions = [
+        {"when": t["when_label"], "merchant": t["merchant"],
+         "category": t["category"], "amount": t["amount"]}
+        for t in tx_rows
+    ]
+    st = cumbuca.status()
+    return {
+        "user": user_dict(u),
+        "balance": _balance_real(conn),
+        "projection": _compute_projection(conn),  # Monte Carlo JÁ pronto
+        "transactions": transactions,
+        "cardTransactions": _card_txs(conn, 8),
+        "topCategories": _top_categories(conn, 5),
+        "connected": st.get("connected"),
+        "syncedAt": st.get("syncedAt"),
+    }
+
+
+@app.post("/api/analyze")
+def analyze():
+    """IA (gpt-5.4-mini) analisa os dados reais e reescreve score/vitais/recomendações/insight."""
+    conn = get_conn()
+    try:
+        rec = conn.execute("SELECT label, amount, day_of_month FROM recurring WHERE active=1").fetchall()
+        goals = conn.execute("SELECT name, saved, target, months_left FROM goals").fetchall()
+        tx_rows = conn.execute(
+            "SELECT * FROM transactions ORDER BY created_at DESC, rowid DESC LIMIT 15"
+        ).fetchall()
+        ctx = {
+            "balance": _balance_real(conn),
+            "projection": _compute_projection(conn),
+            "topCategories": _top_categories(conn, 6),
+            "transactions": [{"when": t["when_label"], "merchant": t["merchant"],
+                              "category": t["category"], "amount": t["amount"]} for t in tx_rows],
+            "cardTransactions": _card_txs(conn, 10),
+            "recurring": [{"label": r["label"], "amount": r["amount"], "day": r["day_of_month"]} for r in rec],
+            "goals": [{"name": g["name"], "saved": g["saved"], "target": g["target"],
+                       "monthsLeft": g["months_left"]} for g in goals],
+        }
+        result = analysis.run(ctx, conn)
+        code = 200 if result.get("ok") else 502
+        return jsonify(result), code
+    finally:
+        conn.close()
+
+
+@app.post("/api/assistant")
+def assistant_chat():
+    d = request.get_json(force=True) or {}
+    message = (d.get("message") or "").strip()
+    if not message:
+        return jsonify(error="message vazio"), 400
+    history = d.get("history") or []
+    conn = get_conn()
+    try:
+        ctx = _build_assistant_context(conn)
+    finally:
+        conn.close()
+    result = assistant.answer(message, history, ctx)
+    code = 200 if "reply" in result else 502
+    return jsonify(result), code
 
 
 @app.get("/api/bootstrap")
@@ -697,5 +945,6 @@ def update_balance():
 
 if __name__ == "__main__":
     init_db()
+    auth.init()
     debug = os.environ.get("FLASK_DEBUG") == "1"
     app.run(host="127.0.0.1", port=5000, debug=debug, use_reloader=False)

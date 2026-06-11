@@ -3,8 +3,6 @@ import { AnimatePresence, motion } from "motion/react";
 import {
   brl,
   brl0,
-  chatScript,
-  chatSeed,
   progressColor,
   zoneColor,
   type Goal,
@@ -20,7 +18,8 @@ import {
   ScoreRing,
 } from "./components/charts";
 import { CatIcon, VITAL_ICON } from "./components/caticon";
-import { CutCategoryModal, GoalModal, RecurringModal, TransactionModal } from "./components/modals";
+import { BankModal, CutCategoryModal, GoalModal, RecurringModal, SyncModal, TransactionModal } from "./components/modals";
+import { api, type BankStatus } from "./lib/api";
 import {
   IconBolt,
   IconCheck,
@@ -68,21 +67,60 @@ function PageHead({ kicker, title, right }: { kicker: string; title: string; rig
    ============================================================ */
 export function OverviewPage({ go }: { go: Go }) {
   const { data, deleteTransaction } = useData();
-  const { health, balance, user, goals, transactions } = data!;
+  const { health, balance, user, goals, transactions, projection } = data!;
   const [txOpen, setTxOpen] = useState(false);
   const [txEdit, setTxEdit] = useState<Tx | null>(null);
+  const [bankStatus, setBankStatus] = useState<BankStatus | null>(null);
+  const [syncOpen, setSyncOpen] = useState(false);
+
+  const refreshBank = () => api.bankStatus().then(setBankStatus).catch(() => {});
+  useEffect(() => { refreshBank(); }, []);
+
+  const connected = !!bankStatus?.connected;
+  const synced = !!bankStatus?.syncedAt;
 
   const zone = zoneColor(health.zone);
-  const creditPct = Math.round((balance.creditUsed / balance.creditLimit) * 100);
+  const creditPct = balance.creditLimit ? Math.round((balance.creditUsed / balance.creditLimit) * 100) : 0;
   const spentPct = balance.income ? Math.round((balance.spent / balance.income) * 100) : 0;
-  const estPct = balance.income ? Math.round((balance.estSpend / balance.income) * 100) : 0;
-  const monthClose = balance.income - balance.estSpend;
-  const scale = Math.max(118, estPct + 12);
+  // Fechamento do mês = saldo final projetado (mesma fonte da aba Projeção e Saúde)
+  const monthClose = projection.expected;
+  const scale = Math.max(118, spentPct + 12);
   const pos = (p: number) => (p / scale) * 100;
   const focusVitals = health.vitals.filter((v) => ["fluxo", "cartao", "reserva"].includes(v.key));
 
   function openAdd() { setTxEdit(null); setTxOpen(true); }
   function openEdit(t: Tx) { setTxEdit(t); setTxOpen(true); }
+
+  const bankName = bankStatus?.accounts?.find((a) => a.institution)?.institution;
+  const connect = () => api.bankConnectUrl().then((r) => { window.location.href = r.url; }).catch(() => {});
+  // conta nova/sem dados: tela limpa, só o convite pra conectar o banco
+  const fresh = !synced && transactions.length === 0;
+
+  if (fresh) {
+    return (
+      <div className="ov">
+        <motion.section {...fade(0)} className="ov-empty">
+          <div className="ov-empty-ic"><IconBolt /></div>
+          <h1 className="ov-empty-h">
+            {connected ? "Tudo pronto. Sincronize seu banco." : "Conecte seu banco e veja sua vida financeira."}
+          </h1>
+          <p className="ov-empty-sub">
+            O Pulso lê suas transações reais via Open Finance e a IA cuida da análise. Você não digita nada.
+          </p>
+          <button
+            className="btn btn-primary ov-empty-cta"
+            onClick={connected ? () => setSyncOpen(true) : connect}
+          >
+            {connected ? "Sincronizar agora" : "Conectar meu banco"}
+          </button>
+          <span className="ov-empty-note">
+            <IconShield /> Parceria Cumbuca · conexão regulada pelo Banco Central
+          </span>
+        </motion.section>
+        <SyncModal open={syncOpen} onClose={() => setSyncOpen(false)} onDone={refreshBank} bankName={bankName} />
+      </div>
+    );
+  }
 
   return (
     <div className="ov">
@@ -102,10 +140,30 @@ export function OverviewPage({ go }: { go: Go }) {
         <h1 className="ov-headline">{health.headline}</h1>
         <p className="ov-sub">{health.subline}</p>
         <div className="ov-ctas">
-          <button className="btn btn-primary" onClick={() => go("health")}>Ver minha saúde</button>
+          {connected ? (
+            <button className="btn btn-primary" onClick={() => setSyncOpen(true)}>
+              ↻ Sincronizar banco
+            </button>
+          ) : (
+            <button className="btn btn-primary" onClick={connect}>
+              Conectar meu banco
+            </button>
+          )}
+          {connected && bankName && (
+            <span className="ov-bank-chip"><IconCheck /> {bankName} conectado</span>
+          )}
           <button className="btn btn-ghost" onClick={() => go("assistant")}>Falar com a IA</button>
         </div>
+        <span className="kicker" style={{ marginTop: 10, opacity: 0.75 }}>
+          {synced
+            ? `● ${bankName ?? "banco"} · último sync ${bankStatus!.syncedAt!.slice(11, 16)}`
+            : connected
+            ? "banco conectado · sincronize para ver seus dados reais"
+            : "conecte seu banco para ver seus dados reais"}
+        </span>
       </motion.section>
+
+      <SyncModal open={syncOpen} onClose={() => setSyncOpen(false)} onDone={refreshBank} bankName={bankName} />
 
       {/* TRIO DE VITAIS */}
       <motion.section {...fade(1)} className="trio">
@@ -138,13 +196,11 @@ export function OverviewPage({ go }: { go: Go }) {
           <span className="overzone" style={{ left: `${pos(100)}%` }} />
           <motion.i initial={{ width: 0 }} animate={{ width: `${pos(spentPct)}%` }} transition={{ duration: 1, ease: EASE, delay: 0.3 }} />
           <span className="renda" style={{ left: `${pos(100)}%` }}><em>renda</em></span>
-          <motion.span className="mark" style={{ left: `${pos(estPct)}%` }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4, delay: 1.2 }} />
         </div>
         <div className="flow-legend">
-          <span className="lg"><i className="dot out" /> Gastou {spentPct}% da renda</span>
-          <span className="lg"><i className="dot est" /> Estimativa: {estPct}% da renda</span>
+          <span className="lg"><i className="dot out" /> Gastou {spentPct}% da renda este mês</span>
         </div>
-        <div className="flow-foot">Nesse ritmo o mês fecha <b style={{ color: monthClose < 0 ? "var(--coral)" : "var(--mint)" }}>{brl0(monthClose)}</b> · fatura {brl0(balance.creditUsed)} ({creditPct}% do limite)</div>
+        <div className="flow-foot">Saldo projetado pro fim do mês: <b style={{ color: monthClose < 0 ? "var(--coral)" : "var(--mint)" }}>{brl0(monthClose)}</b> · fatura {brl0(balance.creditUsed)} ({creditPct}% do limite)</div>
       </motion.section>
 
       {/* ATIVIDADE + METAS */}
@@ -201,8 +257,14 @@ export function OverviewPage({ go }: { go: Go }) {
    ============================================================ */
 export function HealthPage() {
   const { data } = useData();
-  const { health } = data!;
+  const { health, recommendations } = data!;
   const [open, setOpen] = useState<string | null>("cartao");
+
+  // stats derivadas do histórico real (nada fixo) — seguro p/ histórico vazio
+  const hist = health.history;
+  const best = hist.length ? hist.reduce((a, b) => (b.v > a.v ? b : a), hist[0]) : null;
+  const avg = hist.length ? Math.round(hist.reduce((s, h) => s + h.v, 0) / hist.length) : 0;
+  const prev = hist.length > 1 ? hist[hist.length - 2] : null;
 
   return (
     <div className="page">
@@ -222,9 +284,9 @@ export function HealthPage() {
             </div>
           </div>
           <div className="hh-stats">
-            <div><span className="k">Este mês</span><div className="v" style={{ color: "var(--coral)" }}>{health.deltaMonth} pts</div></div>
-            <div><span className="k">Melhor mês</span><div className="v">73 · Mar</div></div>
-            <div><span className="k">Média 6m</span><div className="v">68</div></div>
+            <div><span className="k">Este mês</span><div className="v" style={{ color: health.deltaMonth < 0 ? "var(--coral)" : "var(--mint)" }}>{health.deltaMonth > 0 ? "+" : ""}{health.deltaMonth} pts</div></div>
+            <div><span className="k">Melhor mês</span><div className="v">{best ? `${best.v} · ${best.m}` : "—"}</div></div>
+            <div><span className="k">Média {hist.length || 0}m</span><div className="v">{hist.length ? avg : "—"}</div></div>
           </div>
         </motion.div>
 
@@ -232,7 +294,9 @@ export function HealthPage() {
           <div className="panel-head"><h2>Evolução do score</h2><span className="hint-cap">6 meses</span></div>
           <ScoreHistory data={health.history} />
           <p className="chart-note">
-            Caiu de <b style={{ color: "var(--text)" }}>73</b> (mar) para <b style={{ color: "var(--coral)" }}>58</b> agora. O cartão puxou pra baixo.
+            {prev
+              ? <>De <b style={{ color: "var(--text)" }}>{prev.v}</b> ({prev.m.toLowerCase()}) para <b style={{ color: health.score < prev.v ? "var(--coral)" : "var(--mint)" }}>{health.score}</b> agora. {health.subline}</>
+              : health.subline}
           </p>
         </motion.div>
       </div>
@@ -274,18 +338,18 @@ export function HealthPage() {
         </motion.div>
 
         <div className="span-5 grid" style={{ gap: 18, alignContent: "start" }}>
-          <motion.div {...fade(4)} className="reco mint">
-            <div className="ic"><IconBolt /></div>
-            <h3>Como subir 9 pontos</h3>
-            <p>Pague R$ 200 a mais na fatura este mês. Só isso tira o cartão da zona crítica e devolve ~9 pts ao seu score.</p>
-            <div className="reco-foot"><span className="impact">+9 pts</span><button className="btn btn-primary btn-sm">Aplicar</button></div>
-          </motion.div>
-          <motion.div {...fade(5)} className="reco amber">
-            <div className="ic"><IconShield /></div>
-            <h3>Reserva ainda no começo</h3>
-            <p>Seu colchão cobre 0,4 mês sem renda. Separar R$ 150 automático no dia do salário começa a virar esse jogo.</p>
-            <div className="reco-foot"><span className="impact">0,4 → 1 mês</span><button className="btn btn-ghost btn-sm">Simular</button></div>
-          </motion.div>
+          <div className="panel-head" style={{ marginBottom: -6 }}>
+            <h2>Análise por área de gasto</h2>
+            <span className="hint-cap">gerada pela IA no último sync</span>
+          </div>
+          {recommendations.map((r, i) => (
+            <motion.div {...fade(4 + i)} className={`reco ${r.tone}`} key={r.id}>
+              <div className="ic"><CatIcon name={r.icon} /></div>
+              <h3>{r.title}</h3>
+              <p>{r.text}</p>
+              <div className="reco-foot"><span className="impact">{r.impact}</span></div>
+            </motion.div>
+          ))}
         </div>
       </div>
     </div>
@@ -650,34 +714,73 @@ export function ProjectionPage() {
 /* ============================================================
    5. ASSISTENTE IA — roteiro local; recomendações do backend
    ============================================================ */
+const SUGESTOES = [
+  "Vou fechar o mês no positivo?",
+  "Onde estou gastando mais?",
+  "Quanto dá pra guardar com segurança?",
+  "Tem algum gasto fora do padrão?",
+];
+
+
 export function AssistantPage() {
   const { data } = useData();
   const { recommendations } = data!;
-  const [msgs, setMsgs] = useState<ChatMsg[]>(chatSeed);
+  const [msgs, setMsgs] = useState<ChatMsg[]>([]);
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState("");
+  const [bankStatus, setBankStatus] = useState<BankStatus | null>(null);
+  const [bankErr, setBankErr] = useState(false);
+  const [bankModal, setBankModal] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, typing]);
 
-  function send(text: string) {
-    if (!text.trim()) return;
-    const userMsg: ChatMsg = { id: `u${msgs.length}-${text.slice(0, 4)}`, from: "user", text };
-    setMsgs((m) => [...m.map((x) => ({ ...x, chips: undefined })), userMsg]);
-    setDraft("");
-    setTyping(true);
-    const replies = chatScript[text] ?? chatScript.__default;
-    replies.forEach((r, i) => {
-      setTimeout(() => {
-        if (i === 0) setTyping(false);
-        setMsgs((m) => [...m, { ...r, id: `${r.id}-${m.length}` }]);
-        if (i < replies.length - 1) setTyping(true);
-      }, 850 + i * 1100);
-    });
+  const refreshBank = () => api.bankStatus().then(setBankStatus).catch(() => {});
+
+  // Estado da conexão vem do BACKEND (sobrevive a F5), não do query param.
+  useEffect(() => { refreshBank(); }, []);
+
+  // Retorno do OAuth da Cumbuca: ?bank=connected | error
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("bank");
+    if (p) {
+      if (p === "error") setBankErr(true);
+      if (p === "connected") refreshBank();
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
+
+  const connected = !!bankStatus?.connected;
+  const syncedAt = bankStatus?.syncedAt ? bankStatus.syncedAt.slice(11, 16) : null;
+
+  function onBankClick() {
+    if (connected) setBankModal(true);          // conectado → abre gerência (não refaz OAuth)
+    else api.bankConnectUrl().then((r) => { window.location.href = r.url; }).catch(() => {});
   }
 
-  const lastChips = !typing ? msgs[msgs.length - 1]?.chips : undefined;
-  const showGoal = msgs.some((m) => m.card === "objetivo") && !typing;
+  // Chat real: chama o backend (OpenAI gpt-5.4-mini lê o contexto Monte Carlo).
+  async function send(text: string) {
+    const t = text.trim();
+    if (!t || typing) return;
+    const history = msgs.map((m) => ({ from: m.from, text: m.text }));
+    setMsgs((m) => [...m, { id: `u${m.length}`, from: "user", text: t }]);
+    setDraft("");
+    setTyping(true);
+    try {
+      const r = await api.assistant(t, history);
+      const reply = r.reply ?? (r.error ? `⚠️ ${r.error}` : "Sem resposta do assistente.");
+      setMsgs((m) => [...m, { id: `b${m.length}`, from: "app", text: reply }]);
+    } catch (e: any) {
+      setMsgs((m) => [...m, { id: `b${m.length}`, from: "app", text: `⚠️ ${String(e?.message ?? e)}` }]);
+    } finally {
+      setTyping(false);
+    }
+  }
+
+  const vazio = msgs.length === 0 && !typing;
+  const subtitle = connected
+    ? syncedAt ? `online · sincronizado ${syncedAt}` : "online · conecte e sincronize"
+    : "modo demonstração · conecte seu banco";
 
   return (
     <div className="page">
@@ -687,33 +790,56 @@ export function AssistantPage() {
         <motion.div {...fade(1)} className="chat-panel">
           <div className="chat-head">
             <div className="av"><IconBolt /></div>
-            <div><b>Assistente Pulso</b><small>online · lê suas transações em tempo real</small></div>
+            <div><b>Assistente Pulso</b><small>{subtitle}</small></div>
+            <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={onBankClick}>
+              {connected ? "✓ Banco conectado" : "Conectar banco (Cumbuca)"}
+            </button>
           </div>
+          {bankErr && (
+            <div style={{ padding: "8px 14px", color: "var(--danger, #e5484d)", fontSize: 13 }}>
+              Falha ao conectar o banco. Veja o console do backend.
+            </div>
+          )}
           <div className="chat-thread">
-            <AnimatePresence initial={false}>
-              {msgs.map((m) => (
-                <motion.div key={m.id} layout initial={{ opacity: 0, y: 12, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ duration: 0.32, ease: EASE }} className={`bubble ${m.from}`}>
-                  {m.text}
-                </motion.div>
-              ))}
-            </AnimatePresence>
-
-            {showGoal && (
-              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="chat-goal">
-                <div className="cg-top"><b>Reserva de emergência</b><span className="cg-amt">R$ 150/mês</span></div>
-                <div className="track"><i style={{ width: "16%" }} /></div>
-                <small>R$ 150 de R$ 900 · meta de 6 meses · separa automático no dia 5</small>
+            {vazio ? (
+              /* estado vazio estilo claude.ai: saudação central + chips, sem mensagem */
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: EASE }}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column",
+                  alignItems: "center", justifyContent: "center", gap: 18, textAlign: "center",
+                }}
+              >
+                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", margin: 0 }}>
+                  Como posso ajudar com seu dinheiro?
+                </h2>
+                <div className="chips" style={{ justifyContent: "center", maxWidth: 480 }}>
+                  {SUGESTOES.map((c) => <button key={c} className="chip" onClick={() => send(c)}>{c}</button>)}
+                </div>
               </motion.div>
-            )}
+            ) : (
+              <>
+                <AnimatePresence initial={false}>
+                  {msgs.map((m) => (
+                    <motion.div
+                      key={m.id}
+                      initial={{ opacity: 0, y: 12 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.32, ease: EASE }}
+                      className="bubble-row"
+                      style={{ textAlign: m.from === "user" ? "right" : "left" }}
+                    >
+                      <span className={`bubble ${m.from}`}>{m.text}</span>
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
 
-            {typing && <div className="typing"><i /><i /><i /></div>}
-
-            {lastChips && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="chips" style={{ marginTop: 2 }}>
-                {lastChips.map((c) => <button key={c} className="chip" onClick={() => send(c)}>{c}</button>)}
-              </motion.div>
+                {typing && <div className="typing"><i /><i /><i /></div>}
+                <div ref={endRef} />
+              </>
             )}
-            <div ref={endRef} />
           </div>
           <div className="composer">
             <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send(draft)} placeholder="Pergunte algo ou toque numa opção…" />
@@ -732,6 +858,13 @@ export function AssistantPage() {
           ))}
         </motion.div>
       </div>
+
+      <BankModal
+        open={bankModal}
+        onClose={() => setBankModal(false)}
+        status={bankStatus}
+        onChanged={refreshBank}
+      />
     </div>
   );
 }

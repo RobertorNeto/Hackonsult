@@ -8,6 +8,29 @@ const base = {
   strokeLinejoin: "round" as const,
 };
 
+export const IconEye = (_?: P) => (
+  <svg viewBox="0 0 24 24" {...base}>
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
+);
+
+export const IconEyeOff = (_?: P) => (
+  <svg viewBox="0 0 24 24" {...base}>
+    <path d="M10.6 5.1A11 11 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3 3.9M6.2 6.2A18 18 0 0 0 2 12s3.5 7 10 7a11 11 0 0 0 4.3-.8" />
+    <path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" />
+    <path d="M3 3l18 18" />
+  </svg>
+);
+
+export const IconLogout = (_?: P) => (
+  <svg viewBox="0 0 24 24" {...base}>
+    <path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3" />
+    <path d="M10 17l-5-5 5-5" />
+    <path d="M5 12h12" />
+  </svg>
+);
+
 export const IconGrid = (_?: P) => (
   <svg viewBox="0 0 24 24" {...base}>
     <rect x="3" y="3" width="7.5" height="7.5" rx="2" />

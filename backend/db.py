@@ -1,16 +1,62 @@
-"""Camada de acesso ao SQLite. stdlib sqlite3, sem ORM, persistência simples."""
+"""Camada de acesso ao SQLite. stdlib sqlite3, sem ORM.
+
+Multi-tenant por ARQUIVO: cada conta tem seu próprio banco em data/acct_<id>.db
+(toda a lógica single-tenant id=1 continua igual, só muda o arquivo). As contas,
+sessões e fluxos OAuth ficam num banco central (pulso_auth.db).
+"""
 import json
 import os
 import sqlite3
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "pulso.db")
+_BASE = os.path.dirname(__file__)
+AUTH_DB = os.path.join(_BASE, "pulso_auth.db")
+DATA_DIR = os.path.join(_BASE, "data")
 
 
-def get_conn():
-    conn = sqlite3.connect(DB_PATH)
+def _connect(path):
+    conn = sqlite3.connect(path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
+
+
+def get_auth_conn():
+    """Conexão com o banco central (accounts, sessions, oauth_flows)."""
+    return _connect(AUTH_DB)
+
+
+def account_db_path(account_id: int) -> str:
+    return os.path.join(DATA_DIR, f"acct_{int(account_id)}.db")
+
+
+def _ensure_account_db(path: str):
+    """Cria o banco da conta na primeira vez, LIMPO (sem dados de demonstração).
+    Só o esqueleto mínimo pra UI renderizar; o usuário conecta o banco pra popular."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    fresh = not os.path.exists(path)
+    if fresh:
+        conn = _connect(path)
+        conn.executescript(SCHEMA)
+        conn.commit()
+        if not conn.execute("SELECT COUNT(*) c FROM user").fetchone()["c"]:
+            _seed_blank(conn)
+        conn.close()
+
+
+def get_conn_for(account_id: int):
+    """Conexão com o banco de uma conta específica (cria/semeia se novo)."""
+    path = account_db_path(account_id)
+    _ensure_account_db(path)
+    return _connect(path)
+
+
+def get_conn():
+    """Conexão com o banco da conta autenticada na request atual (flask.g)."""
+    from flask import g
+    acct = getattr(g, "account", None)
+    if not acct:
+        raise RuntimeError("get_conn() sem conta autenticada no contexto")
+    return get_conn_for(acct["id"])
 
 
 SCHEMA = """
@@ -76,13 +122,42 @@ CREATE TABLE IF NOT EXISTS recurring (
 
 
 def init_db():
-    conn = get_conn()
-    conn.executescript(SCHEMA)
+    """Bancos de conta são criados sob demanda em get_conn_for(); aqui só o dir."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+
+
+_MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
+          "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"]
+
+
+def _seed_blank(conn):
+    """Esqueleto mínimo p/ conta nova: estrutura válida, ZERO dados de demo.
+    Sem transações, metas, gastos fixos, vitais, histórico ou recomendações."""
+    from datetime import date
+    today = date.today()
+    mes = _MESES[today.month - 1]
+    conn.execute(
+        "INSERT INTO user VALUES (1,?,?,?,?,?,?,?,?,?,?)",
+        ("Você", "Você", "VC", 0, "", 0.0, "", 5,
+         today.strftime("%d/%m"), mes),
+    )
+    conn.execute(
+        "INSERT INTO balance VALUES (1,?,?,?,?,?,?,?,?)",
+        (0.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0, 0),
+    )
+    conn.execute(
+        "INSERT INTO health_meta VALUES (1,?,?,?,?,?,?)",
+        (0, "sem dados", "atencao", 0,
+         "Conecte seu banco pra ver sua saúde financeira.",
+         "Sincronize e a IA analisa seus dados reais."),
+    )
+    conn.execute(
+        "INSERT INTO insight VALUES (1,?,?,?,?,?,?)",
+        ("Comece aqui", "trend", "Conecte seu banco pra começar.",
+         "Em parceria com a Cumbuca via Open Finance, seus dados entram prontos.",
+         "Conectar banco", "Agora não"),
+    )
     conn.commit()
-    has_user = conn.execute("SELECT COUNT(*) c FROM user").fetchone()["c"]
-    if not has_user:
-        _seed(conn)
-    conn.close()
 
 
 def _seed(conn):
@@ -148,15 +223,6 @@ def _seed(conn):
         "INSERT INTO insight VALUES (1,?,?,?,?,?,?)",
         (ins["badge"], ins["icon"], ins["title"], ins["body"], ins["primary"], ins["secondary"]),
     )
-    _seed_recurring = [
-        ("r-1", "Aluguel",  "shield", 1200.0,  5),
-        ("r-2", "Netflix",  "film",     45.0, 15),
-        ("r-3", "Academia", "gym",      80.0, 10),
-        ("r-4", "Internet", "trend",   100.0, 20),
-    ]
-    for rid, lbl, ico, amt, dom in _seed_recurring:
-        conn.execute(
-            "INSERT OR IGNORE INTO recurring VALUES (?,?,?,?,?,1,?)",
-            (rid, lbl, ico, amt, dom, ""),
-        )
+    # Sem gastos fixos semeados: o usuário adiciona os reais (ou viram dados reais
+    # via análise). Nada de Aluguel/Netflix fictícios poluindo a projeção.
     conn.commit()
