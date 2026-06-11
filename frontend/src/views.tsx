@@ -551,12 +551,13 @@ export function GoalsPage() {
    4. PROJEÇÃO — saldo no mês + áreas de corte selecionáveis
    ============================================================ */
 export function ProjectionPage() {
-  const { data, saveCutPlan, clearCutPlan } = useData();
+  const { data, recurringCandidates, confirmRecurringCandidate, dismissRecurringCandidate, saveCutPlan, clearCutPlan } = useData();
   const { projection, user, recurring, balance, spendByCategory, cutPlan } = data!;
 
   const [cuts, setCuts] = useState<Record<string, number>>({});
   const [recOpen, setRecOpen] = useState(false);
   const [recEdit, setRecEdit] = useState<Recurring | null>(null);
+  const [confirmingRec, setConfirmingRec] = useState<string | null>(null);
 
   // áreas de corte derivadas AUTOMATICAMENTE do gasto real por categoria
   // (mesma fonte do donut da Saúde — backend, conta + cartão). Pula entradas/
@@ -627,6 +628,50 @@ export function ProjectionPage() {
   return (
     <div className="page">
       <PageHead kicker="como o mês vai fechar" title={`Projeção de ${user.monthLabel}`} />
+
+      {/* banner: gastos fixos detectados pelo Cumbuca aguardando confirmação */}
+      {recurringCandidates.length > 0 && (
+        <motion.div {...fade(0)} className="rec-candidates-banner">
+          <div className="rcb-head">
+            <span className="rcb-icon">📌</span>
+            <div>
+              <strong>Possíveis gastos fixos detectados</strong>
+              <span className="rcb-sub">Confirme os que repetem todo mês para melhorar sua projeção</span>
+            </div>
+          </div>
+          <div className="rcb-list">
+            {recurringCandidates.map((c) => (
+              <div key={c.merchant} className="rcb-item">
+                <div className="rcb-info">
+                  <span className="rcb-name">{c.merchant}</span>
+                  <span className="rcb-meta">
+                    {brl0(c.amount)}{c.suggestedDay ? ` · todo dia ${c.suggestedDay}` : ""}
+                  </span>
+                </div>
+                <div className="rcb-actions">
+                  <button
+                    className="btn-sm btn-mint"
+                    disabled={confirmingRec === c.merchant}
+                    onClick={async () => {
+                      setConfirmingRec(c.merchant);
+                      await confirmRecurringCandidate(c);
+                      setConfirmingRec(null);
+                    }}
+                  >
+                    {confirmingRec === c.merchant ? "..." : "Confirmar"}
+                  </button>
+                  <button
+                    className="btn-sm btn-ghost"
+                    onClick={() => dismissRecurringCandidate(c.merchant)}
+                  >
+                    Ignorar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* topo: fechamento base vs com plano */}
       <motion.div {...fade(1)} className="proj-summary">

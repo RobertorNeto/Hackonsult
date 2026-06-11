@@ -543,7 +543,7 @@ export function SyncModal({
   onDone: () => void;
   bankName?: string | null;
 }) {
-  const { reload } = useData();
+  const { reload, setRecurringCandidates } = useData();
   const [stage, setStage] = useState<"confirm" | "sync" | "ai" | "done" | "error">("confirm");
   const [summary, setSummary] = useState<string[]>([]);
   const [err, setErr] = useState<string | null>(null);
@@ -570,6 +570,10 @@ export function SyncModal({
       if (a.ok) lines.push(`IA reavaliou sua saúde: score ${a.score} (${a.zone})`);
       else lines.push(`Análise da IA falhou: ${a.error}`);
       setSummary(lines);
+      if (s.recurringCandidates?.length) {
+        setRecurringCandidates(s.recurringCandidates);
+        lines.push(`${s.recurringCandidates.length} possível(is) gasto(s) fixo(s) detectado(s) — veja em Projeção`);
+      }
       reload();          // app inteiro recarrega com dado real
       onDone();
       setStage("done");

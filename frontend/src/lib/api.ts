@@ -133,6 +133,7 @@ export const api = {
       balance?: number;
       levers?: number;
       card?: { cards: number; billTxs: number; cardName?: string; billTotal?: number };
+      recurringCandidates?: RecurringCandidate[];
       error?: string;
     }>("/bank/sync", { method: "POST" }),
 
@@ -176,6 +177,14 @@ export const api = {
     }),
   clearCutPlan: () =>
     req<{ cutPlan: { label: string; icon: string; cut: number }[] }>("/cut-plan", { method: "DELETE" }),
+};
+
+export type RecurringCandidate = {
+  merchant: string;
+  amount: number;
+  category: string;
+  icon: string;
+  suggestedDay: number | null;
 };
 
 export type BankAccount = {

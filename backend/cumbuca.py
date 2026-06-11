@@ -10,6 +10,7 @@ adiciona depois. Tokens ficam em claro no SQLite — ACEITÁVEL só pra dev loca
 cifrar antes de qualquer coisa séria.
 """
 import base64
+import calendar
 import hashlib
 import json
 import os
@@ -657,8 +658,19 @@ def _sync_credit_card(token: str, sid: str, conn) -> dict:
 
 def _regen_levers(conn):
     """Recria as alavancas de corte a partir do gasto real por categoria
-    (conta + cartão do mês), excluindo transferências/investimentos."""
-    mp = date.today().strftime("%Y-%m-") + "%"
+    (conta + cartão do mês), excluindo transferências/investimentos.
+
+    `current` = projeção do gasto total no mês inteiro pela taxa atual
+                (gasto_até_hoje / dias_decorridos × dias_no_mês).
+    `max`     = mesmo valor (teto — não faz sentido "cortar" acima do projetado).
+
+    Assim o slider vai de `spentByCat` (piso — já foi gasto) até `current`
+    (projeção — dá pra cortar o que ainda não saiu).
+    """
+    today = date.today()
+    days_elapsed = today.day          # dias decorridos incluindo hoje (1-based)
+    days_in_month = calendar.monthrange(today.year, today.month)[1]
+    mp = today.strftime("%Y-%m-") + "%"
     skip = ("Transferência", "Investimento", "Renda")
     rows = conn.execute(
         """SELECT category, icon, SUM(spend) AS total FROM (
@@ -676,10 +688,64 @@ def _regen_levers(conn):
     conn.execute("DELETE FROM levers")
     for i, r in enumerate(real):
         lid = "lv-" + "".join(ch if ch.isalnum() else "-" for ch in r["category"].lower())
+        spent_so_far = round(r["total"], 2)
+        # extrapolação linear: se já gastei X em N dias, vou gastar X/N*total no mês
+        projected = round(spent_so_far / days_elapsed * days_in_month, 2) if days_elapsed > 0 else spent_so_far
         conn.execute("INSERT INTO levers VALUES (?,?,?,?,?,?)",
                      (lid, r["category"], r["icon"] or "card",
-                      round(r["total"], 2), round(r["total"], 2), i))
+                      projected, projected, i))
     return len(real)
+
+
+# Categorias e keywords que indicam gasto tipicamente fixo/recorrente
+_RECURRING_CATEGORIES = {"Moradia/Contas"}
+_RECURRING_KEYWORDS   = (
+    "netflix", "spotify", "prime video", "hbo", "disney", "deezer",
+    "youtube", "apple", "google one", "dropbox", "academia", "smartfit",
+    "bodytech", "bluefit", "gym", "condomin", "aluguel", "seguro",
+)
+
+
+def _detect_recurring_candidates(conn, new_txs: list[dict]) -> list[dict]:
+    """Retorna transações do sync que parecem fixas e ainda NÃO estão em recurring.
+
+    Critério: categoria Moradia/Contas OU keyword de assinatura/academia no nome.
+    Deduplicado por merchant normalizado; exclui o que já existe na tabela.
+    """
+    existing = {
+        r["label"].lower()
+        for r in conn.execute("SELECT label FROM recurring").fetchall()
+    }
+    candidates: list[dict] = []
+    seen: set[str] = set()
+    for tx in new_txs:
+        amount = tx.get("amount", 0)
+        if amount >= 0:
+            continue  # só saídas
+        name  = tx.get("merchant") or ""
+        cat   = tx.get("category") or ""
+        low   = name.lower()
+        is_candidate = (
+            cat in _RECURRING_CATEGORIES
+            or any(k in low for k in _RECURRING_KEYWORDS)
+        )
+        if not is_candidate or low in existing or low in seen:
+            continue
+        seen.add(low)
+        # dia estimado: dia da transação no mês
+        day = None
+        try:
+            day = datetime.fromisoformat(tx.get("created_at", "")).day
+        except Exception:
+            pass
+        candidates.append({
+            "merchant": name,
+            "amount":   round(abs(amount), 2),
+            "category": cat,
+            "icon":     tx.get("icon") or "card",
+            "suggestedDay": day,
+        })
+    return candidates
 
 
 def sync(days: int = 7) -> dict:
@@ -764,6 +830,11 @@ def sync(days: int = 7) -> dict:
         card = _sync_credit_card(token, sid, conn)
         levers_n = _regen_levers(conn)
         conn.commit()
+
+        # 7. candidatos a gasto fixo (não persiste — frontend confirma)
+        mapped_txs = [map_transaction(r) for r in raw_txs]
+        mapped_txs = [t for t in mapped_txs if t]
+        recurring_candidates = _detect_recurring_candidates(conn, mapped_txs)
     finally:
         conn.close()
 
@@ -773,6 +844,7 @@ def sync(days: int = 7) -> dict:
         "balance": balance_val, "accountId": acct_id,
         "card": card, "levers": levers_n,
         "from": frm, "to": to,
+        "recurringCandidates": recurring_candidates,
     }
 
 
