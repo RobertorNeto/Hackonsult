@@ -2,7 +2,7 @@
 // Mantém a UI síncrona (os componentes leem do contexto, não do mock).
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { api, getToken } from "./lib/api";
-import type { Balance, Bootstrap, Goal, Recurring, Tx, User } from "./data/mock";
+import type { Balance, Bootstrap, CutPlanItem, Goal, Recurring, Tx, User } from "./data/mock";
 
 type AddTx = {
   merchant: string;
@@ -51,6 +51,8 @@ type Ctx = {
   addLever: (l: { label: string; current: number; icon?: string }) => Promise<void>;
   editLever: (id: string, l: { label?: string; current?: number; icon?: string }) => Promise<void>;
   deleteLever: (id: string) => Promise<void>;
+  saveCutPlan: (items: CutPlanItem[]) => Promise<void>;
+  clearCutPlan: () => Promise<void>;
   updateUser: (patch: Partial<User>) => Promise<void>;
   updateBalance: (patch: Partial<Balance>) => Promise<void>;
   addRecurring: (r: AddRecurring) => Promise<void>;
@@ -134,6 +136,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setData((d) => (d ? { ...d, levers: d.levers.filter((x) => x.id !== id) } : d));
   }, []);
 
+  const saveCutPlan = useCallback(async (items: CutPlanItem[]) => {
+    const { cutPlan } = await api.saveCutPlan(items);
+    setData((d) => (d ? { ...d, cutPlan } : d));
+  }, []);
+
+  const clearCutPlan = useCallback(async () => {
+    const { cutPlan } = await api.clearCutPlan();
+    setData((d) => (d ? { ...d, cutPlan } : d));
+  }, []);
+
   const addRecurring = useCallback(async (r: AddRecurring) => {
     const { recurring } = await api.addRecurring(r);
     setData((d) => (d ? { ...d, recurring: [...d.recurring, recurring] } : d));
@@ -164,6 +176,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     addTransaction, editTransaction, deleteTransaction,
     addGoal, editGoal, deleteGoal,
     addLever, editLever, deleteLever,
+    saveCutPlan, clearCutPlan,
     updateUser, updateBalance,
     addRecurring, editRecurring, deleteRecurring,
   };

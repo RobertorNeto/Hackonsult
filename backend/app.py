@@ -405,6 +405,7 @@ def _bootstrap(conn):
         "recommendations": recos,
         "insight": insight,
         "spendByCategory": _spend_by_category(conn),
+        "cutPlan": _cut_plan(conn),
     }
 
 
@@ -523,6 +524,23 @@ def _spend_by_category(conn):
         (mp, mp),
     ).fetchall()
     return {r["category"]: round(r["total"], 2) for r in rows}
+
+
+def _ensure_cut_plan(conn):
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS cut_plan (
+             label TEXT NOT NULL,
+             icon  TEXT NOT NULL DEFAULT 'card',
+             cut   REAL NOT NULL,
+             ord   INTEGER NOT NULL
+           )"""
+    )
+
+
+def _cut_plan(conn):
+    _ensure_cut_plan(conn)
+    rows = conn.execute("SELECT label, icon, cut FROM cut_plan ORDER BY ord").fetchall()
+    return [{"label": r["label"], "icon": r["icon"], "cut": round(r["cut"], 2)} for r in rows]
 
 
 def _card_txs(conn, limit=10):
@@ -876,6 +894,44 @@ def delete_lever(lever_id):
         conn.execute("DELETE FROM levers WHERE id=?", (lever_id,))
         conn.commit()
         return jsonify(deleted=lever_id)
+    finally:
+        conn.close()
+
+
+@app.put("/api/cut-plan")
+def save_cut_plan():
+    """Salva (substitui) o plano de corte de gastos da conta."""
+    d = request.get_json(force=True) or {}
+    items = d.get("items") or []
+    conn = get_conn()
+    try:
+        _ensure_cut_plan(conn)
+        conn.execute("DELETE FROM cut_plan")
+        for i, it in enumerate(items):
+            try:
+                cut = float(it.get("cut"))
+            except (TypeError, ValueError):
+                continue
+            if cut <= 0:
+                continue
+            conn.execute(
+                "INSERT INTO cut_plan (label, icon, cut, ord) VALUES (?,?,?,?)",
+                ((it.get("label") or "").strip() or "Categoria", it.get("icon") or "card", cut, i),
+            )
+        conn.commit()
+        return jsonify(cutPlan=_cut_plan(conn))
+    finally:
+        conn.close()
+
+
+@app.delete("/api/cut-plan")
+def clear_cut_plan():
+    conn = get_conn()
+    try:
+        _ensure_cut_plan(conn)
+        conn.execute("DELETE FROM cut_plan")
+        conn.commit()
+        return jsonify(cutPlan=[])
     finally:
         conn.close()
 

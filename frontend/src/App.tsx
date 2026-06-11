@@ -166,6 +166,15 @@ export default function App() {
         ))}
       </nav>
 
+      {/* FAB: atalho fixo pro assistente de IA */}
+      {tab !== "assistant" && (
+        <button className="fab-ai" onClick={() => setTab("assistant")} aria-label="Falar com a IA" title="Falar com a IA">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+            <path d="M12 1.8c.9 5.3 3.9 8.3 9.2 9.2-5.3.9-8.3 3.9-9.2 9.2-.9-5.3-3.9-8.3-9.2-9.2 5.3-.9 8.3-3.9 9.2-9.2Z" fill="currentColor" />
+          </svg>
+        </button>
+      )}
+
       <EditProfileModal open={editOpen} onClose={() => setEditOpen(false)} />
     </div>
   );

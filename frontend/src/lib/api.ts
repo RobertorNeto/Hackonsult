@@ -167,6 +167,15 @@ export const api = {
     }),
   me: () => req<{ user: AuthUser }>("/auth/me"),
   logout: () => req<{ ok: boolean }>("/auth/logout", { method: "POST" }),
+
+  // ── Plano de corte ──
+  saveCutPlan: (items: { label: string; icon: string; cut: number }[]) =>
+    req<{ cutPlan: { label: string; icon: string; cut: number }[] }>("/cut-plan", {
+      method: "PUT",
+      body: JSON.stringify({ items }),
+    }),
+  clearCutPlan: () =>
+    req<{ cutPlan: { label: string; icon: string; cut: number }[] }>("/cut-plan", { method: "DELETE" }),
 };
 
 export type BankAccount = {

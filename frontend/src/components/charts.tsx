@@ -10,10 +10,14 @@ export function CategoryDonut({
   data,
   size = 184,
   thickness = 26,
+  centerValue,
+  centerLabel = "total gasto",
 }: {
   data: { label: string; value: number; color: string }[];
   size?: number;
   thickness?: number;
+  centerValue?: string;
+  centerLabel?: string;
 }) {
   const total = data.reduce((a, d) => a + d.value, 0);
   const r = (size - thickness) / 2;
@@ -54,8 +58,8 @@ export function CategoryDonut({
           </motion.g>
         </svg>
         <div className="donut-center">
-          <div className="donut-total">{brl0(total)}</div>
-          <div className="donut-cap">total gasto</div>
+          <div className="donut-total">{centerValue ?? brl0(total)}</div>
+          <div className="donut-cap">{centerLabel}</div>
         </div>
       </div>
       <div className="donut-legend">

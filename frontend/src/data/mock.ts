@@ -140,7 +140,10 @@ export type Bootstrap = {
   recommendations: Reco[];
   insight: Insight;
   spendByCategory: Record<string, number>;
+  cutPlan: CutPlanItem[];
 };
+
+export type CutPlanItem = { label: string; icon: string; cut: number };
 
 // ——— helpers de formatação / cor ———
 export const brl = (v: number) =>
