@@ -68,7 +68,7 @@ function PageHead({ kicker, title, right }: { kicker: string; title: string; rig
    ============================================================ */
 export function OverviewPage({ go }: { go: Go }) {
   const { data, deleteTransaction } = useData();
-  const { health, balance, user, goals, transactions, projection } = data!;
+  const { health, balance, user, goals, transactions, projection, spendByCategory } = data!;
   const [txOpen, setTxOpen] = useState(false);
   const [txEdit, setTxEdit] = useState<Tx | null>(null);
   const [bankStatus, setBankStatus] = useState<BankStatus | null>(null);
@@ -95,6 +95,20 @@ export function OverviewPage({ go }: { go: Go }) {
   // alinhamento dos rótulos da barra: evita estourar a borda quando a marca
   // fica perto do canto (ex.: projeção muito acima da renda)
   const markPos = pos(projSpendPct);
+
+  // Segmentos de categoria para a barra colorida
+  const CAT_COLORS_OV = ["#1a7a4f", "#3a5bc7", "#b45309", "#bf4048", "#6f9e2e", "#0d9488", "#7c3aed", "#9c9b92"];
+  const catSegments = (() => {
+    const map: Record<string, number> = {};
+    for (const [cat, val] of Object.entries(spendByCategory ?? {})) {
+      if (val <= 0) continue;
+      const c = /transfer/i.test(cat) ? "Investimentos" : cat || "Outros";
+      map[c] = (map[c] || 0) + val;
+    }
+    return Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value], i) => ({ label, value, color: CAT_COLORS_OV[i % CAT_COLORS_OV.length] }));
+  })();
   const rendaPos = pos(100);
   const markAlign = markPos > 62 ? "mark-left" : markPos < 24 ? "mark-right" : "";
   const focusVitals = health.vitals.filter((v) => ["fluxo", "cartao", "reserva"].includes(v.key));
@@ -224,7 +238,7 @@ export function OverviewPage({ go }: { go: Go }) {
                   <span className="ohi-bar" aria-hidden><i style={{ width: `${Math.min(100, spentPct)}%` }} /></span>
                   <div className="ohi-txt">
                     <b>Barra do mês — {spentPct}% gasto</b>
-                    <p>Quanto da sua renda já saiu até agora. A marca <em>projeção</em> mostra quanto você deve gastar até fechar o mês ({projSpendPct}%), calculado pela IA.</p>
+                    <p>Quanto das suas entradas já saiu até agora. A marca <em>projeção</em> mostra quanto você deve gastar até fechar o mês ({projSpendPct}%), calculado pela IA.</p>
                   </div>
                 </div>
                 <div className="ov-help-item">
@@ -269,7 +283,17 @@ export function OverviewPage({ go }: { go: Go }) {
         </div>
         <div className="flow-bar">
           <span className="overzone" style={{ left: `${pos(100)}%` }} />
-          <motion.i initial={{ width: 0 }} animate={{ width: `${pos(spentPct)}%` }} transition={{ duration: 1, ease: EASE, delay: 0.3 }} />
+          {/* barra segmentada por categoria */}
+          <motion.div
+            className="flow-bar-fill"
+            initial={{ width: 0 }}
+            animate={{ width: `${pos(spentPct)}%` }}
+            transition={{ duration: 1, ease: EASE, delay: 0.3 }}
+          >
+            {catSegments.map((seg) => (
+              <span key={seg.label} style={{ flex: `${seg.value}`, background: seg.color }} />
+            ))}
+          </motion.div>
           {/* % de projeção fixada no fim do preenchimento, sempre dentro do limite da barra */}
           <motion.span
             className="flow-pct"
@@ -286,8 +310,18 @@ export function OverviewPage({ go }: { go: Go }) {
           </span>
         </div>
         <div className="flow-legend">
-          <span className="lg"><i className="dot out" /> Gastou {spentPct}% da renda este mês</span>
+          <span className="lg"><i className="dot out" /> Gastou {spentPct}% das entradas este mês</span>
         </div>
+        {catSegments.length > 0 && (
+          <div className="flow-cats">
+            {catSegments.slice(0, 5).map((seg) => (
+              <span key={seg.label} className="flow-cat-item">
+                <i style={{ background: seg.color }} />
+                {seg.label}
+              </span>
+            ))}
+          </div>
+        )}
         <div className="flow-foot">Saldo projetado pro fim do mês: <b style={{ color: monthClose < 0 ? "var(--coral)" : "var(--mint)" }}>{brl0(monthClose)}</b> · fatura {brl0(balance.creditUsed)} ({creditPct}% do limite)</div>
       </motion.section>
 

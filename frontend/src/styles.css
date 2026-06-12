@@ -376,8 +376,10 @@ input, select { font-family: inherit; }
 .flow-bar { position: relative; height: 10px; border-radius: 999px; margin-top: 28px; background: color-mix(in srgb, var(--mint) 22%, var(--panel-3)); }
 /* zona de estouro: além da renda */
 .flow-bar .overzone { position: absolute; top: 0; bottom: 0; right: 0; background: color-mix(in srgb, var(--coral) 15%, transparent); border-radius: 0 999px 999px 0; }
-/* gasto até hoje */
+/* gasto até hoje — barra segmentada por categoria */
 .flow-bar i { position: absolute; left: 0; top: 0; height: 100%; border-radius: 999px; background: var(--coral); }
+.flow-bar-fill { position: absolute; left: 0; top: 0; height: 100%; border-radius: 999px; display: flex; overflow: hidden; }
+.flow-bar-fill span { height: 100%; }
 /* % de gasto projetado, ancorada no fim do preenchimento (cresce p/ dentro, nunca passa do limite) */
 .flow-bar .flow-pct {
   position: absolute; top: 50%; transform: translate(-100%, -50%);
@@ -415,6 +417,9 @@ input, select { font-family: inherit; }
 .flow-legend .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .flow-legend .dot.out { background: var(--coral); }
 .flow-legend .dot.est { background: var(--text-dim); }
+.flow-cats { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 6px; }
+.flow-cat-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-dim); }
+.flow-cat-item i { width: 8px; height: 8px; border-radius: 50%; flex: none; display: block; }
 .flow-foot b { font-weight: 600; }
 .flow-foot { font-family: var(--font-mono); font-size: 11px; color: var(--text-mute); margin-top: 16px; letter-spacing: 0.01em; }
 
