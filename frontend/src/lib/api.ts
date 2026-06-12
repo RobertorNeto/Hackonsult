@@ -1,7 +1,9 @@
 // Cliente da API Flask. Em dev o Vite faz proxy de /api → :5000.
 import type { Balance, Bootstrap, Goal, Lever, Recurring, Tx, User } from "../data/mock";
 
-const BASE = "/api";
+// Dev: "/api" (Vite faz proxy → :5000). Prod (Vercel): VITE_API_BASE aponta
+// pro backend no Render, ex. "https://pulso-api.onrender.com/api".
+const BASE = import.meta.env.VITE_API_BASE ?? "/api";
 const TOKEN_KEY = "pulso_token";
 
 export const getToken = () => localStorage.getItem(TOKEN_KEY);

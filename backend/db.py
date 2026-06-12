@@ -9,14 +9,20 @@ import os
 import sqlite3
 
 _BASE = os.path.dirname(__file__)
-AUTH_DB = os.path.join(_BASE, "pulso_auth.db")
-DATA_DIR = os.path.join(_BASE, "data")
+# Em produção (Render/Fly) aponte PULSO_DATA_DIR pra um disco/volume persistente.
+# Default = backend/data (igual ao dev). AUTH_DB fica ao lado dos dados.
+DATA_DIR = os.environ.get("PULSO_DATA_DIR", os.path.join(_BASE, "data"))
+AUTH_DB = os.environ.get("PULSO_AUTH_DB", os.path.join(_BASE, "pulso_auth.db"))
 
 
 def _connect(path):
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    # WAL: leitor não bloqueia escritor. Multi-tenant (1 arquivo/conta) + WAL
+    # aguenta bem o pico de testes simultâneos da demo.
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 

@@ -26,7 +26,13 @@ import cumbuca
 from db import get_conn, init_db
 
 app = Flask(__name__)
+# CORS liberado: auth é por Bearer token (sem cookie), então origin aberta é ok.
 CORS(app)
+
+# Inicialização no IMPORT do módulo, não só no __main__ — sob gunicorn (Render/Fly)
+# o bloco __main__ nunca roda, então as tabelas/dirs precisam existir aqui.
+init_db()
+auth.init()
 
 
 # ----------------------- auth gate -----------------------

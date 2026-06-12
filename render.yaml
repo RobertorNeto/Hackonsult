@@ -1,0 +1,29 @@
+# Render Blueprint — backend Flask do Pulso.
+# Importar via: Render Dashboard → New → Blueprint → aponta pro repo.
+# Front (Vite) NÃO entra aqui — vai no Vercel.
+services:
+  - type: web
+    name: pulso-api
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    # gthread: poucos workers, várias threads — combina com SQLite + chamadas
+    # bloqueantes à OpenAI/Cumbuca (I/O solta o GIL). $PORT é injetado pelo Render.
+    startCommand: gunicorn -w 2 -k gthread --threads 8 --timeout 120 -b 0.0.0.0:$PORT app:app
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.6
+      # Segredos: preencher no painel (sync:false = não vem do arquivo).
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.4-mini
+      # URL pública do front no Vercel (pro redirect pós-OAuth voltar certo).
+      - key: PULSO_FRONTEND_URL
+        sync: false
+      # URL pública DESTE serviço no Render (monta o redirect_uri do OAuth Cumbuca).
+      # Ex.: https://pulso-api.onrender.com
+      - key: PULSO_BACKEND_URL
+        sync: false
