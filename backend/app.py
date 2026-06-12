@@ -426,8 +426,16 @@ def _compute_projection(conn, overrides=None):
         else f"Gasto médio de R${mean_daily:.0f}/dia · σ R${std_daily:.0f}."
     driver = f"{base} Emergências: ~{LAMBDA_MONTHLY:.0%}/mês, média R${mean_emergency:.0f}."
 
+    # Gasto TOTAL projetado no mês = realizado + saída futura.
+    # Identidade: saída_futura = checking + salário_futuro − expected, logo
+    # total = spent + checking + salário_futuro − expected. Usa o fechamento
+    # do Monte Carlo (já embute fatura, recorrentes, mean_daily, emergências).
+    future_income = salary if payday > today.day else 0.0
+    projected_spend = max(0, round(spent + checking + future_income - expected))
+
     return {
         "expected": expected,
+        "projectedSpend": projected_spend,
         "optimistic": optimistic,
         "pessimistic": pessimistic,
         "probabilityNegative": round(prob_neg, 3),
