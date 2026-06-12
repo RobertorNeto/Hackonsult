@@ -4,7 +4,7 @@
 // colagem/headline a esquerda, formulario a direita.
 import { useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
-import { api, setToken, type AuthUser } from "./lib/api";
+import { api, loginAsDemo, setToken, type AuthUser } from "./lib/api";
 import {
   IconBolt, IconEye, IconEyeOff, IconShield,
 } from "./components/icons";
@@ -43,9 +43,7 @@ export default function AuthPage({
     setBusy(true);
     setErr(null);
     try {
-      const res = await api.login("demo@gmail.com", "Demo123");
-      setToken(res.token);
-      onAuthed(res.user);
+      onAuthed(await loginAsDemo());
     } catch {
       setErr("Não foi possível acessar a demo.");
     } finally {

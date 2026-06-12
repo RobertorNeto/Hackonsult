@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { useData } from "./store";
-import { api, clearToken, getToken, type AuthUser } from "./lib/api";
+import { api, clearToken, getToken, loginAsDemo, type AuthUser } from "./lib/api";
 import {
   IconBell,
   IconBolt,
@@ -77,6 +77,17 @@ export default function App() {
     if (account) enterApp(account);   // já logado → direto pra plataforma
     else setView("login");
   }
+  // entra (ou troca) direto pra conta demo, sem passar pelo formulário de login
+  async function enterDemo() {
+    if (getToken()) api.logout().catch(() => {});   // encerra a sessão atual, se houver
+    try {
+      enterApp(await loginAsDemo());
+    } catch {
+      clearToken();
+      setAccount(null);
+      setView("login");   // fallback: na tela de login dá pra tentar de novo
+    }
+  }
   function logout() {
     api.logout().catch(() => {});
     clearToken();
@@ -86,7 +97,7 @@ export default function App() {
   }
 
   if (view === "landing") {
-    return <LandingPage onEnter={onLandingEnter} />;
+    return <LandingPage onEnter={onLandingEnter} onDemo={enterDemo} />;
   }
   if (view === "login" || view === "register") {
     return (
@@ -171,7 +182,7 @@ export default function App() {
             exit={{ opacity: 0, y: -10 }}
             transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
           >
-            {tab === "overview" && <OverviewPage go={go} />}
+            {tab === "overview" && <OverviewPage go={go} onDemo={enterDemo} />}
             {tab === "health" && <HealthPage />}
             {tab === "goals" && <GoalsPage />}
             {tab === "projection" && <ProjectionPage />}

@@ -66,7 +66,7 @@ function PageHead({ kicker, title, right }: { kicker: string; title: string; rig
 /* ============================================================
    1. VISÃO GERAL — home estilo WHOOP: score gigante + vitais
    ============================================================ */
-export function OverviewPage({ go }: { go: Go }) {
+export function OverviewPage({ go, onDemo }: { go: Go; onDemo: () => void }) {
   const { data, deleteTransaction } = useData();
   const { health, balance, user, goals, transactions, projection, spendByCategory } = data!;
   const [txOpen, setTxOpen] = useState(false);
@@ -120,9 +120,8 @@ export function OverviewPage({ go }: { go: Go }) {
   const connect = () => api.bankConnectUrl().then((r) => { window.location.href = r.url; }).catch(() => {});
   // conta nova/sem dados: tela limpa, só o convite pra conectar o banco
   const fresh = !synced && transactions.length === 0;
-  const [skippedBank, setSkippedBank] = useState(false);
 
-  if (fresh && !skippedBank) {
+  if (fresh) {
     return (
       <div className="ov">
         <motion.section {...fade(0)} className="ov-empty">
@@ -142,9 +141,10 @@ export function OverviewPage({ go }: { go: Go }) {
           <span className="ov-empty-note">
             <IconShield /> Parceria Cumbuca · conexão regulada pelo Banco Central
           </span>
+          {/* sai da conta atual e entra na conta demo (já vem com dados) */}
           <button
             className="btn btn-ghost ov-empty-skip"
-            onClick={() => setSkippedBank(true)}
+            onClick={onDemo}
           >
             Explorar sem conectar banco
           </button>
@@ -338,7 +338,7 @@ export function OverviewPage({ go }: { go: Go }) {
               <div className="tx" key={t.id}>
                 <div className="ic"><CatIcon name={t.icon} /></div>
                 <div className="info">
-                  <b>{t.merchant}{t.flagged && <span className="flag-dot">revisar</span>}</b>
+                  <b><span className="tx-name">{t.merchant}</span>{t.flagged && <span className="flag-dot">revisar</span>}</b>
                   <small>{t.category} · {t.when}</small>
                 </div>
                 <div className={`amt ${t.amount > 0 ? "in" : ""}`}>{t.amount > 0 ? "+" : "−"}{brl(Math.abs(t.amount))}</div>

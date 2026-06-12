@@ -42,6 +42,15 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 
 export type AuthUser = { id: number; name: string; email: string };
 
+// Conta demo criada pelo seed do backend (seed_demo). Entra direto, sem formulário.
+export const DEMO_EMAIL = "demo@gmail.com";
+export const DEMO_PASSWORD = "Demo123";
+export async function loginAsDemo(): Promise<AuthUser> {
+  const res = await api.login(DEMO_EMAIL, DEMO_PASSWORD);
+  setToken(res.token);
+  return res.user;
+}
+
 export const api = {
   bootstrap: () => req<Bootstrap>("/bootstrap"),
 

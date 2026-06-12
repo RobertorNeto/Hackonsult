@@ -1,6 +1,7 @@
 // Landing page do Pulso - marketing/entrada do SaaS.
 // Stack do projeto: React + Motion + CSS nativo (classes .lp-*). Tema claro,
-// 1 accent (verde mint da marca). CTA único de entrada: "Entrar no Pulso".
+// 1 accent (verde mint da marca). CTAs de entrada: "Entrar no Pulso" (login)
+// e "Acessar demo" (entra direto na conta demo, sem formulário).
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useEffect, useState } from "react";
 import {
@@ -16,7 +17,7 @@ import {
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
-export default function LandingPage({ onEnter }: { onEnter: () => void }) {
+export default function LandingPage({ onEnter, onDemo }: { onEnter: () => void; onDemo: () => void }) {
   const reduce = useReducedMotion();
 
   // reveal ao entrar na viewport (motivado: hierarquia/storytelling de scroll)
@@ -43,7 +44,10 @@ export default function LandingPage({ onEnter }: { onEnter: () => void }) {
           <button onClick={scrollTo("open-finance")}>Open Finance</button>
           <button onClick={scrollTo("como-funciona")}>Como funciona</button>
         </nav>
-        <button className="lp-btn lp-btn-primary lp-btn-sm" onClick={onEnter}>Entrar no Pulso</button>
+        <div className="lp-nav-ctas">
+          <button className="lp-btn lp-btn-ghost lp-btn-sm" onClick={onDemo}>Acessar demo</button>
+          <button className="lp-btn lp-btn-primary lp-btn-sm" onClick={onEnter}>Entrar no Pulso</button>
+        </div>
       </header>
 
       {/* ============ HERO (dobra limpa, centralizada — estilo Mobbin) ============ */}
@@ -67,6 +71,7 @@ export default function LandingPage({ onEnter }: { onEnter: () => void }) {
           </motion.p>
           <motion.div className="lp-hero-ctas" variants={fadeUp(reduce)}>
             <button className="lp-btn lp-btn-primary" onClick={onEnter}>Entrar no Pulso</button>
+            <button className="lp-btn lp-btn-ghost" onClick={onDemo}>Acessar demo</button>
             <button className="lp-btn lp-btn-ghost" onClick={scrollTo("como-funciona")}>
               Ver como funciona <IconArrowDown />
             </button>

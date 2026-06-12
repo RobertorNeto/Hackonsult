@@ -1,7 +1,7 @@
 """Pulso · API Flask + SQLite.
 Serve todos os dados do app e aceita inserção de transações, metas e edição
 do perfil. A parte de IA (chat) NÃO está aqui — fica local no front por enquanto.
-Rodar: python app.py  (porta 5000)
+Rodar: python app.py  (porta 5001, sobrescreva com a env PORT)
 """
 import calendar
 import json
@@ -1260,4 +1260,5 @@ if __name__ == "__main__":
     init_db()
     auth.init()
     debug = os.environ.get("FLASK_DEBUG") == "1"
-    app.run(host="127.0.0.1", port=5000, debug=debug, use_reloader=False)
+    port = int(os.environ.get("PORT", "5001"))
+    app.run(host="127.0.0.1", port=port, debug=debug, use_reloader=False)

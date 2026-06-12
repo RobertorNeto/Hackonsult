@@ -61,7 +61,7 @@ function shutdown() {
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
-console.log("\x1b[36m[pulso]\x1b[0m subindo backend (:5000) + frontend (:5173). Ctrl+C para parar.\n");
+console.log("\x1b[36m[pulso]\x1b[0m subindo backend (:5001) + frontend (:5173). Ctrl+C para parar.\n");
 
 // backend primeiro (frontend faz proxy /api -> :5000)
 run("back", python, ["app.py"], join(root, "backend"), "35");

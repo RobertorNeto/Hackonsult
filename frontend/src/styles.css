@@ -193,7 +193,9 @@ input, select { font-family: inherit; }
 .dock { display: none; }
 
 /* ===================== CABEÇALHO DE PÁGINA ===================== */
-.page { display: grid; gap: 18px; }
+/* minmax(0,1fr): a coluna nunca alarga além do viewport por causa de um
+   filho largo (texto/anel/SVG) — evita a página "torta" no celular */
+.page { display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr); }
 .page-head { display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
 .page-head .ph-txt { flex: 1; min-width: 0; }
 .page-head small {
@@ -215,7 +217,7 @@ input, select { font-family: inherit; }
 
 /* ===================== GRID / PANELS ===================== */
 .grid { display: grid; gap: 18px; }
-.cols-12 { grid-template-columns: repeat(12, 1fr); }
+.cols-12 { grid-template-columns: repeat(12, minmax(0, 1fr)); }
 .span-4 { grid-column: span 4; }
 .span-5 { grid-column: span 5; }
 .span-6 { grid-column: span 6; }
@@ -266,7 +268,7 @@ input, select { font-family: inherit; }
 .ring-center .unit { font-size: 0.42em; font-weight: 600; color: var(--text-mute); }
 
 /* ===================== OVERVIEW ===================== */
-.ov { display: grid; gap: 26px; }
+.ov { display: grid; gap: 26px; grid-template-columns: minmax(0, 1fr); }
 .ov-hero {
   display: flex;
   flex-direction: column;
@@ -539,7 +541,11 @@ input, select { font-family: inherit; }
 }
 .tx .ic svg { width: 17px; height: 17px; }
 .tx .info { flex: 1; min-width: 0; }
-.tx .info b { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 7px; letter-spacing: -0.01em; }
+.tx .info b { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 7px; letter-spacing: -0.01em; min-width: 0; }
+/* nome do estabelecimento trunca com "…" — sem isso a linha não encolhe
+   e empurra a página inteira pra fora do viewport no celular */
+.tx .info .tx-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tx .info .flag-dot { flex: none; }
 .tx .info small { color: var(--text-mute); font-size: 12px; }
 .tx .amt { font-family: var(--font-mono); font-size: 13.5px; font-weight: 500; }
 .tx .amt.in { color: var(--mint); }
@@ -669,6 +675,8 @@ input, select { font-family: inherit; }
 
 /* ===================== BOTÕES ===================== */
 .btn { border-radius: var(--radius-sm); padding: 10px 18px; font-size: 13.5px; font-weight: 600; letter-spacing: -0.01em; transition: transform 0.14s var(--ease), background 0.15s, box-shadow 0.15s, border-color 0.15s; white-space: nowrap; }
+/* ícones dentro de .btn: SVGs do projeto não têm width/height próprios */
+.btn svg { width: 15px; height: 15px; flex: none; }
 .btn:active { transform: scale(0.98); }
 .btn-primary { background: var(--ink); color: #fff; }
 .btn-primary:hover { background: var(--ink-2); box-shadow: var(--shadow-sm); }
@@ -1034,7 +1042,7 @@ input, select { font-family: inherit; }
   .np-item { padding: 8px 11px; }
 }
 @media (max-width: 900px) {
-  .chat-shell { grid-template-columns: 1fr; }
+  .chat-shell { grid-template-columns: minmax(0, 1fr); }
   .gs-stats { grid-template-columns: repeat(2, 1fr); }
   .gs-stat:nth-child(2n) { border-right: none; }
   .gs-stat:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
@@ -1043,7 +1051,7 @@ input, select { font-family: inherit; }
   .topbar { grid-template-columns: auto 1fr; padding: 0 18px; }
   .nav-pill { display: none; }
   .content { padding: 24px 16px 110px; }
-  .cols-12 { grid-template-columns: 1fr; }
+  .cols-12 { grid-template-columns: minmax(0, 1fr); }
   .span-4, .span-5, .span-6, .span-7, .span-8 { grid-column: auto; }
   .trio { grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .trio-item { padding: 6px 2px; gap: 10px; }
@@ -1052,7 +1060,7 @@ input, select { font-family: inherit; }
   .trio-item .ring-center .big { font-size: 25px !important; }
   .trio-item b { font-size: 12px; }
   .flow-v { font-size: 24px; }
-  .goal-body { grid-template-columns: 1fr; }
+  .goal-body { grid-template-columns: minmax(0, 1fr); }
   .goal-body .ring-wrap { margin: 0 auto; }
   .insight-banner { flex-direction: column; align-items: flex-start; }
   .vital-detail .vd-inner { padding-left: 2px; }
@@ -1066,6 +1074,10 @@ input, select { font-family: inherit; }
   .ps-arrow { transform: rotate(90deg); justify-self: start; }
   .tx-actions { opacity: 1; }
   .proj-legend { display: none; }
+  .whatif-result { flex-wrap: wrap; }
+  .scenario-row { gap: 8px; }
+  .rcb-item { flex-wrap: wrap; }
+  .health-hero .hh-stats .v { font-size: 16px; }
 
   /* dock inferior */
   .dock {
@@ -1108,10 +1120,48 @@ input, select { font-family: inherit; }
   .content { padding: 22px 14px 110px; }
   .page-head h1 { font-size: 23px; }
   .page-head { gap: 10px; }
+
+  /* anel do score (overview) tem 290px inline — encolhe pra caber com folga */
+  .ov-ring .ring-wrap { width: 224px !important; height: 224px !important; }
+  .ov-ring .ring-wrap svg { width: 100% !important; height: 100% !important; }
+  .ov-ring .ring-center .big { font-size: 64px !important; }
+  .ov-ring::before { inset: -36px; }
+  .ov-ctas { width: 100%; flex-direction: column; align-items: stretch; }
+  .ov-ctas .btn { width: 100%; }
+  .ov-ctas .ov-bank-chip { justify-content: center; }
+
+  /* anel da página saúde (200px inline) */
+  .health-hero .ring-wrap { width: 168px !important; height: 168px !important; }
+  .health-hero .ring-wrap svg { width: 100% !important; height: 100% !important; }
+  .health-hero .ring-center .big { font-size: 46px !important; }
+
+  /* painéis e cards com menos respiro interno no celular */
+  .panel { padding: 18px 16px; }
+  .goal-card { padding: 18px 16px; }
+  .flow-v { font-size: 22px; }
+
+  /* projeção: gráfico segue a proporção do viewBox (sem faixa vazia) */
+  .proj-chart { height: auto; }
+  .proj-headline .big { font-size: 32px; }
+  .ps-v { font-size: 26px; }
+  .scenario { padding: 11px 8px; }
+  .scenario .v { font-size: 14px; }
+  .cut-scale { white-space: normal; flex-wrap: wrap; gap: 4px 10px; }
+
+  /* chat / assistente */
+  .bubble { max-width: 88%; }
+  .chat-thread { padding: 16px 14px; }
+  .composer { padding: 12px 14px; }
 }
 @media (max-width: 380px) {
   .brand b { display: none; }
   .topbar { grid-template-columns: auto 1fr; }
+  .dock { bottom: 10px; }
+  .dock .dk { padding: 8px 9px; font-size: 9px; }
+  .trio-item .ring-wrap { width: 74px !important; height: 74px !important; }
+  .trio-item .ring-center .big { font-size: 22px !important; }
+  .ov-ring .ring-wrap { width: 196px !important; height: 196px !important; }
+  .ov-ring .ring-center .big { font-size: 56px !important; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1132,6 +1182,9 @@ input, select { font-family: inherit; }
   transition: transform 0.16s var(--ease), background 0.18s, box-shadow 0.18s, border-color 0.18s;
 }
 .lp-btn:active { transform: translateY(1px) scale(0.99); }
+/* ícones dentro dos botões da landing: sem isso o SVG (só viewBox) cai no
+   tamanho padrão 300×150 e estoura o botão "Ver como funciona" */
+.lp-btn svg { width: 16px; height: 16px; flex: none; }
 .lp-btn-primary { background: var(--ink); color: #fff; box-shadow: 0 6px 20px -8px rgba(25, 25, 23, 0.5); }
 .lp-btn-primary:hover { background: var(--ink-2); transform: translateY(-2px); box-shadow: 0 12px 30px -10px rgba(25, 25, 23, 0.55); }
 .lp-btn-ghost { background: var(--panel); color: var(--text); border-color: var(--line); box-shadow: var(--shadow-pill); }
@@ -1159,6 +1212,7 @@ input, select { font-family: inherit; }
 }
 .lp-brand-mark svg { width: 16px; height: 16px; }
 .lp-nav-links { display: flex; gap: 6px; }
+.lp-nav-ctas { display: flex; align-items: center; gap: 8px; }
 .lp-nav-links button {
   background: none; border: none; color: var(--text-dim); font-size: 14.5px; font-weight: 500;
   padding: 8px 15px; border-radius: var(--radius-pill); transition: color 0.16s, background 0.16s;
@@ -1412,6 +1466,10 @@ input, select { font-family: inherit; }
 .lp-footer-cta:hover svg { transform: rotate(-90deg) translatex(-3px); }
 
 /* —— responsivo landing —— */
+@media (max-width: 968px) {
+  /* nav pill não pode colar nas bordas da tela */
+  .lp-nav { margin: 12px 14px 0; top: 10px; }
+}
 @media (max-width: 860px) {
   .lp-nav-links { display: none; }
   .lp-hero { padding: 88px 20px 40px; }
@@ -1430,13 +1488,38 @@ input, select { font-family: inherit; }
   .lp-float { display: none; }
   .lp-phone { width: 250px; }
   .lp-showcase-stage { padding: 8px 0 0; min-height: 440px; }
+  .lp-nav { height: 54px; padding: 0 8px 0 14px; }
+  .lp-brand b { font-size: 17px; }
+  .lp-brand-mark { width: 27px; height: 27px; }
+  .lp-nav .lp-btn-sm { padding: 8px 13px; font-size: 13px; }
 }
 @media (max-width: 480px) {
-  .lp-hero { padding: 80px 18px 36px; }
-  .lp-hero-ctas { width: 100%; flex-direction: column; }
-  .lp-hero-ctas .lp-btn { width: 100%; justify-content: center; }
+  .lp-hero { padding: 76px 18px 32px; }
+  .lp-h1 { font-size: clamp(33px, 10.5vw, 44px); }
+  .lp-sub { font-size: 15.5px; }
+  .lp-hero-deck { width: 84px; height: 84px; margin-bottom: 26px; }
+  .lp-deck-card { border-radius: 20px; }
+  .lp-deck-card svg { width: 38px; height: 38px; }
+  .lp-deck-ghost.g1 { width: 72px; height: 80px; top: -6px; }
+  .lp-deck-ghost.g2 { width: 58px; height: 78px; top: -12px; }
+  /* CTAs empilhados, mas compactos — botão não vira um bloco gigante */
+  .lp-hero-ctas { width: 100%; flex-direction: column; align-items: center; gap: 10px; margin-top: 26px; }
+  .lp-hero-ctas .lp-btn { width: 100%; max-width: 300px; justify-content: center; padding: 12px 20px; font-size: 14.5px; }
   .lp-btn-lg { padding: 14px 24px; font-size: 15px; }
   .lp-section, .lp-of { padding-left: 18px; padding-right: 18px; }
+  .lp-section { padding-top: 48px; padding-bottom: 48px; }
+  .lp-section-head { margin-bottom: 32px; }
+  .lp-lead { font-size: 15.5px; }
+  .lp-cell, .lp-step { padding: 22px 20px; border-radius: 18px; }
+  .lp-cell h3 { font-size: 17.5px; }
+  .lp-step h3 { font-size: 19px; }
+  .lp-flow-node { padding: 15px 16px; }
+  .lp-trust { padding-bottom: 44px; }
+  .lp-logo-lockup b { font-size: 15.5px; }
+  .lp-logo-lockup svg { width: 22px; height: 22px; }
+  .lp-cta-inner { padding: 64px 20px; }
+  .lp-cta-inner .lp-btn { margin-top: 22px; }
+  .lp-footer { flex-direction: column; align-items: center; text-align: center; gap: 16px; padding: 32px 20px 44px; }
 }
 
 /* ============================================================
@@ -1653,6 +1736,16 @@ input, select { font-family: inherit; }
 @media (max-width: 560px) {
   .glx-tab { font-size: 21px; }
 }
+@media (max-width: 480px) {
+  .glx { padding: 32px 14px; gap: 22px; }
+  .glx-panel { padding: 30px 22px 24px; }
+  .glx-h { font-size: 23px; }
+  .glx-logo { width: 48px; height: 48px; margin-bottom: 16px; }
+  .glx-logo svg { width: 24px; height: 24px; }
+  .glx-perks { gap: 10px 18px; }
+  /* prints de fundo poluem em tela estreita — mantém só os mais afastados */
+  .glx-print.p3, .glx-print.p4 { display: none; }
+}
 
 /* ===================== conta nova: tela limpa ===================== */
 .ov-empty {
@@ -1691,4 +1784,4 @@ input, select { font-family: inherit; }
   background: var(--panel-3); border-radius: var(--radius-sm); padding: 10px 13px; margin-bottom: 4px;
 }
 .sync-bank b { color: var(--text); }
-.sync-bank-dot { width:
+.sync-bank-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); flex: none; }
