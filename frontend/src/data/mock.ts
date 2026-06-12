@@ -140,6 +140,7 @@ export type Bootstrap = {
   recommendations: Reco[];
   insight: Insight;
   spendByCategory: Record<string, number>;
+  spendByCategoryProjected: Record<string, number>;
   cutPlan: CutPlanItem[];
 };
 

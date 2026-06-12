@@ -477,6 +477,7 @@ def _bootstrap(conn):
         "recommendations": recos,
         "insight": insight,
         "spendByCategory": _spend_by_category(conn),
+        "spendByCategoryProjected": _projected_by_category(conn),
         "cutPlan": _cut_plan(conn),
     }
 
@@ -666,6 +667,21 @@ def _spend_by_category(conn):
         (mp, mp),
     ).fetchall()
     return {r["category"]: round(r["total"], 2) for r in rows}
+
+
+def _projected_by_category(conn):
+    """Extrapolacao linear do gasto por categoria ate o fim do mes.
+    Usa o ritmo diario atual (gasto_ate_hoje / dias_passados) projetado
+    para os dias_no_mes totais. Serve de teto para o slider de cortes."""
+    import calendar as _cal
+    today = date.today()
+    days_elapsed = today.day
+    days_in_month = _cal.monthrange(today.year, today.month)[1]
+    spend = _spend_by_category(conn)
+    if days_elapsed == 0:
+        return spend
+    factor = days_in_month / days_elapsed
+    return {cat: round(total * factor, 2) for cat, total in spend.items()}
 
 
 def _ensure_cut_plan(conn):

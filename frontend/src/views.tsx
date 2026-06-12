@@ -695,7 +695,7 @@ function adjLabels(adj: Record<string, number | boolean>): string[] {
 
 export function ProjectionPage() {
   const { data, recurringCandidates, confirmRecurringCandidate, dismissRecurringCandidate, saveCutPlan, clearCutPlan } = useData();
-  const { projection, user, recurring, balance, spendByCategory, cutPlan } = data!;
+  const { projection, user, recurring, balance, spendByCategory, spendByCategoryProjected, cutPlan } = data!;
 
   const [cuts, setCuts] = useState<Record<string, number>>({});
   const [recOpen, setRecOpen] = useState(false);
@@ -746,18 +746,22 @@ export function ProjectionPage() {
   const iconByCat: Record<string, string> = Object.fromEntries(ICON_OPTIONS.map((o) => [o.label, o.key]));
   const catAreas = Object.entries(spendByCategory ?? {})
     .filter(([cat, v]) => v > 0 && !SKIP_CUT.test(cat))
-    .map(([label, spent]) => ({ id: `cat:${label}`, label, spent, icon: iconByCat[label] ?? "card", fixo: false }));
+    .map(([label, rawSpent]) => {
+      const spent     = Math.round(rawSpent);
+      const projected = Math.round(Math.max(rawSpent, (spendByCategoryProjected ?? {})[label] ?? rawSpent));
+      return { id: `cat:${label}`, label, spent, projected, icon: iconByCat[label] ?? "card", fixo: false };
+    });
   const catLabels = new Set(catAreas.map((a) => a.label.toLowerCase()));
   const recAreas = recurring
     .filter((r) => r.active && r.amount > 0 && !catLabels.has(r.label.toLowerCase()))
-    .map((r) => ({ id: `rec:${r.id}`, label: r.label, spent: r.amount, icon: r.icon || "card", fixo: true }));
+    .map((r) => { const amt = Math.round(r.amount); return { id: `rec:${r.id}`, label: r.label, spent: amt, projected: amt, icon: r.icon || "card", fixo: true }; });
   const allAreas = [...catAreas, ...recAreas].sort((a, b) => b.spent - a.spent);
 
   // só as áreas escolhidas (não ocultas) entram no plano e na conta
   const cutAreas = allAreas.filter((a) => !hidden.has(a.id));
 
   // corte total: cada área pode ser cortada até zerar o próprio gasto
-  const totalCut = cutAreas.reduce((a, x) => a + Math.min(cuts[x.id] || 0, x.spent), 0);
+  const totalCut = cutAreas.reduce((a, x) => a + Math.min(cuts[x.id] || 0, Math.max(0, x.projected - x.spent)), 0);
 
   const plan = useMemo(() => {
     const { median, todayIndex, daysInMonth } = projection;
@@ -796,12 +800,9 @@ export function ProjectionPage() {
   const isPos = newClose >= 0;
   const ganho = newClose - baseClose;
 
-  function setCut(id: string, v: number) {
-    setCuts((c) => ({ ...c, [id]: v }));
-  }
   async function transformPlan() {
     const items = cutAreas
-      .map((a) => ({ label: a.label, icon: a.icon, cut: Math.min(cuts[a.id] || 0, a.spent) }))
+      .map((a) => ({ label: a.label, icon: a.icon, cut: Math.min(cuts[a.id] || 0, Math.max(0, a.projected - a.spent)) }))
       .filter((x) => x.cut > 0);
     await saveCutPlan(items);
   }
@@ -989,16 +990,26 @@ export function ProjectionPage() {
           {cutAreas.length === 0 && <div className="empty">Nenhuma área selecionada. Toque em “escolher áreas”.</div>}
 
           {cutAreas.map((a) => {
-            const spent     = a.spent;
-            const cut       = Math.min(cuts[a.id] || 0, spent);
-            const sliderVal = spent - cut;                 // gasto projetado (0..spent)
-            const tp = spent > 0 ? (sliderVal / spent) * 100 : 0;
+            const spent     = a.spent;      // gasto real ate hoje (piso)
+            const projected = a.projected;  // projecao ate fim do mes (teto)
+            const range     = projected - spent;  // inteiros garantidos na construcao
+            // sliderVal: quanto vai gastar no total (spent..projected)
+            // default = projected (sem corte). cut = projected - sliderVal
+            const sliderVal = projected - Math.min(cuts[a.id] || 0, range);
+            const cut = projected - sliderVal;
 
-            const keepColor = "color-mix(in srgb,var(--text) 28%,var(--panel-3))";
-            const cutColor  = "color-mix(in srgb,var(--mint) 45%,var(--panel-3))";
+            // min={0} max={projected}: thumb e gradiente usam o mesmo sistema
+            // de coordenadas. onChange trava em Math.max(spent,...) para o
+            // handle nao passar da zona ja gasta.
+            const spentPct  = projected > 0 ? (spent  / projected) * 100 : 0;
+            const sliderPct = projected > 0 ? (sliderVal / projected) * 100 : 100;
+            const fixedColor = "color-mix(in srgb,var(--text) 40%,var(--panel-3))";
+            const keepColor  = "color-mix(in srgb,var(--text) 22%,var(--panel-3))";
+            const cutColor   = "color-mix(in srgb,var(--mint) 45%,var(--panel-3))";
             const trackBg = `linear-gradient(to right,
-              ${keepColor} 0%, ${keepColor} ${tp}%,
-              ${cutColor} ${tp}%, ${cutColor} 100%)`;
+              ${fixedColor} 0%, ${fixedColor} ${spentPct}%,
+              ${keepColor} ${spentPct}%, ${keepColor} ${sliderPct}%,
+              ${cutColor} ${sliderPct}%, ${cutColor} 100%)`;
 
             return (
               <div className="cut" key={a.id}>
@@ -1010,21 +1021,24 @@ export function ProjectionPage() {
                 <input
                   type="range"
                   min={0}
-                  max={spent}
+                  max={projected}
                   step={1}
                   value={sliderVal}
-                  disabled={spent === 0}
+                  disabled={range === 0}
                   style={{ background: trackBg }}
-                  onChange={(e) => setCut(a.id, spent - Number(e.target.value))}
+                  onChange={(e) => {
+                    const v = Math.max(spent, Number(e.target.value));
+                    setCuts((c) => ({ ...c, [a.id]: projected - v }));
+                  }}
                 />
                 <div className="cut-scale">
-                  <span>
-                    <span style={{ color: "var(--text-mute)" }}>{brl0(spent)} gastos</span>
-                    {cut > 0 && (
-                      <span> · cortar <b style={{ color: "var(--mint)" }}>{brl0(cut)}</b></span>
-                    )}
+                  <span style={{ color: "var(--text-mute)" }}>
+                    {brl0(spent)} gastos
+                    <span style={{ color: "var(--text)", opacity: 0.45 }}> → {brl0(projected)} projetado</span>
                   </span>
-                  <span style={{ color: "var(--text-mute)" }}>fica {brl0(sliderVal)}</span>
+                  {cut > 0 && (
+                    <span>cortar <b style={{ color: "var(--mint)" }}>{brl0(cut)}</b></span>
+                  )}
                 </div>
               </div>
             );
