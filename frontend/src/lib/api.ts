@@ -1,5 +1,14 @@
 // Cliente da API Flask. Em dev o Vite faz proxy de /api → :5000.
-import type { Balance, Bootstrap, Goal, Lever, Recurring, Tx, User } from "../data/mock";
+import type { Balance, Bootstrap, Goal, Lever, Projection, Recurring, Tx, User } from "../data/mock";
+
+export type WhatIf = {
+  ok: boolean;
+  note: string;
+  adjustments: Record<string, number | boolean>;
+  base: Projection;
+  scenario: Projection;
+  error?: string;
+};
 
 // Dev: "/api" (Vite faz proxy → :5000). Prod (Vercel): VITE_API_BASE aponta
 // pro backend no Render, ex. "https://pulso-api.onrender.com/api".
@@ -151,6 +160,10 @@ export const api = {
       "/analyze",
       { method: "POST" }
     ),
+
+  // ── What-if da projeção (IA traduz o cenário → re-roda o Monte Carlo) ──
+  projectionWhatIf: (message: string) =>
+    req<WhatIf>("/projection/whatif", { method: "POST", body: JSON.stringify({ message }) }),
 
   // ── Assistente (OpenAI) ──
   assistant: (message: string, history: { from: string; text: string }[]) =>

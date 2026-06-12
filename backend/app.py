@@ -177,8 +177,17 @@ def tx_dict(r):
     }
 
 
-def _compute_projection(conn):
+def _compute_projection(conn, overrides=None):
     """Simulação Monte Carlo do saldo diário para o mês corrente.
+
+    `overrides` (opcional): cenário what-if que altera SÓ o futuro, sem gravar
+    nada no banco. Chaves aceitas (todas opcionais):
+      - spendPct (float)      multiplicador do gasto diário discricionário (0.7 = -30%)
+      - recurringPct (float)  multiplicador dos gastos fixos futuros
+      - extraIncome (float)   entrada extra imediata (some ao saldo de partida do futuro)
+      - oneOffExpense (float) gasto pontual imediato (subtrai do saldo de partida)
+      - skipCreditBill (bool) não debita a fatura do cartão no vencimento futuro
+    O passado (caminho realizado) permanece intocado — é dado real.
 
     Caminho realizado (dia 0 → hoje): determinístico, ajustado para fechar
     exatamente no saldo atual (`checking`).
@@ -198,6 +207,21 @@ def _compute_projection(conn):
       - `probabilityNegative` = fração das simulações que fecham < 0
       - chart bands = p20/p50/p80 por dia
     """
+    # ── parâmetros do cenário what-if (default = neutro, projeção real) ──
+    o = overrides or {}
+    def _f(key, default):
+        try:
+            v = float(o.get(key))
+            return v if math.isfinite(v) else default
+        except (TypeError, ValueError):
+            return default
+    spend_pct     = max(0.0, _f("spendPct", 1.0))
+    recurring_pct = max(0.0, _f("recurringPct", 1.0))
+    extra_income  = max(0.0, _f("extraIncome", 0.0))
+    one_off       = max(0.0, _f("oneOffExpense", 0.0))
+    skip_bill     = bool(o.get("skipCreditBill"))
+    fut_shift     = extra_income - one_off   # ajuste imediato no saldo de partida do futuro
+
     today = date.today()
     days_in_month = calendar.monthrange(today.year, today.month)[1]
     today_index = today.day - 1  # 0-based
@@ -310,18 +334,18 @@ def _compute_projection(conn):
 
     for _ in range(N_SIMS):
         path: list[float] = []
-        bal = checking
+        bal = checking + fut_shift          # what-if: entrada extra / gasto pontual imediato
         for d in range(remaining):
             dom = today_index + 2 + d  # 1-based
             if dom == payday:
                 bal += salary
-            if dom == credit_due:
+            if dom == credit_due and not skip_bill:
                 bal -= max(0.0, credit_used)
             # gastos fixos recorrentes (determinísticos)
             for rec_dom, rec_amt in rec_items:
                 if dom == rec_dom:
-                    bal -= rec_amt
-            bal -= sample_spend()
+                    bal -= rec_amt * recurring_pct
+            bal -= sample_spend() * spend_pct
             # emergência: Bernoulli(p_emerg_day) → valor Exponencial(mean_emergency)
             if rng.random() < p_emerg_day:
                 bal -= rng.expovariate(1.0 / mean_emergency)
@@ -421,6 +445,76 @@ def get_projection():
     conn = get_conn()
     try:
         return jsonify(_compute_projection(conn))
+    finally:
+        conn.close()
+
+
+_WHATIF_SYSTEM = """Você converte um pedido de cenário "e se..." em ajustes numéricos \
+para a projeção financeira do mês. Responda APENAS JSON neste schema:
+{
+ "spendPct": <float, multiplicador do gasto diário variável: 1=igual, 0.7=corta 30%, 1.2=+20%>,
+ "recurringPct": <float, idem para os gastos fixos>,
+ "extraIncome": <float, entrada extra imediata em R$ (senão 0)>,
+ "oneOffExpense": <float, gasto pontual imediato em R$ (senão 0)>,
+ "skipCreditBill": <bool, true se o usuário adiar/não pagar a fatura agora>,
+ "note": "<1 frase PT-BR resumindo o cenário aplicado, max 90 chars>"
+}
+Use o CONTEXTO para estimar valores: ex. "cortar metade do delivery" → reduza spendPct
+conforme o peso de Alimentação/Delivery no gasto total. Não invente entradas que o
+usuário não pediu. Campos não mencionados ficam neutros (1.0 nos *Pct, 0 nos valores,
+false em skipCreditBill). PT-BR."""
+
+
+def _whatif_overrides(message: str, conn) -> dict:
+    """GPT traduz o pedido em linguagem natural para os knobs do motor."""
+    if not os.environ.get("OPENAI_API_KEY"):
+        raise RuntimeError("OPENAI_API_KEY ausente")
+    b = _balance_real(conn)
+    cats = _top_categories(conn, 8) or []
+    ctx = (
+        f"Renda do mês: R${b.get('income')}. Gasto até agora: R${b.get('spent')}. "
+        f"Fatura do cartão: R${b.get('creditUsed')} (vence dia {b.get('creditDueDay')}). "
+        "Gasto por categoria: "
+        + ("; ".join(f"{c['category']} R${c['total']}" for c in cats) or "sem dados")
+    )
+    from openai import OpenAI
+    client = OpenAI()
+    resp = client.chat.completions.create(
+        model=os.environ.get("OPENAI_MODEL", "gpt-5.4-mini"),
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": _WHATIF_SYSTEM},
+            {"role": "user", "content": f"CONTEXTO:\n{ctx}\n\nPEDIDO: {message}"},
+        ],
+    )
+    return json.loads(resp.choices[0].message.content)
+
+
+@app.post("/api/projection/whatif")
+def projection_whatif():
+    """Cenário what-if powered by IA: traduz o pedido, re-roda o Monte Carlo com
+    os ajustes (sem gravar nada) e devolve base + cenário pra UI comparar."""
+    d = request.get_json(force=True) or {}
+    message = (d.get("message") or "").strip()
+    if not message:
+        return jsonify(error="mensagem vazia"), 400
+    conn = get_conn()
+    try:
+        try:
+            parsed = _whatif_overrides(message, conn)
+        except Exception as e:
+            return jsonify(error=f"{type(e).__name__}: {e}"), 502
+        keys = ("spendPct", "recurringPct", "extraIncome", "oneOffExpense", "skipCreditBill")
+        overrides = {k: parsed.get(k) for k in keys if parsed.get(k) is not None}
+        base = _compute_projection(conn)
+        scenario = _compute_projection(conn, overrides)
+        return jsonify(
+            ok=True,
+            note=parsed.get("note", ""),
+            adjustments=overrides,
+            base=base,
+            scenario=scenario,
+        )
     finally:
         conn.close()
 

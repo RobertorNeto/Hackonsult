@@ -9,37 +9,44 @@ import {
   IconGrid,
   IconLogout,
   IconPulse,
-  IconSparkChat,
   IconTarget,
 } from "./components/icons";
 import { EditProfileModal } from "./components/modals";
 import LandingPage from "./landing";
 import AuthPage from "./auth";
 import {
-  AssistantPage,
+  AssistantSheet,
   GoalsPage,
   HealthPage,
   OverviewPage,
   ProjectionPage,
 } from "./views";
 
-type Tab = "overview" | "health" | "goals" | "projection" | "assistant";
+type Tab = "overview" | "health" | "goals" | "projection";
 
 const NAV: { id: Tab; label: string; Icon: () => JSX.Element }[] = [
   { id: "overview", label: "Visão geral", Icon: IconGrid },
   { id: "health", label: "Saúde", Icon: IconPulse },
   { id: "goals", label: "Metas", Icon: IconTarget },
   { id: "projection", label: "Projeção", Icon: IconChart },
-  { id: "assistant", label: "Assistente", Icon: IconSparkChat },
 ];
+
+/* mesmo "spark" do antigo FAB — agora vira o botão de IA no topbar */
+const SparkMark = () => (
+  <svg viewBox="0 0 24 24" fill="none" aria-hidden>
+    <path d="M12 1.8c.9 5.3 3.9 8.3 9.2 9.2-5.3.9-8.3 3.9-9.2 9.2-.9-5.3-3.9-8.3-9.2-9.2 5.3-.9 8.3-3.9 9.2-9.2Z" fill="currentColor" />
+  </svg>
+);
 
 export default function App() {
   const { data, loading, error, reload } = useData();
   const [tab, setTab] = useState<Tab>("overview");
   const [editOpen, setEditOpen] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [view, setView] = useState<"landing" | "login" | "register" | "app">("landing");
   const [account, setAccount] = useState<AuthUser | null>(null);
-  const go = (t: string) => setTab(t as Tab);
+  // "assistant" não é mais uma aba: abre o bottom-sheet. Resto troca de aba.
+  const go = (t: string) => (t === "assistant" ? setAssistantOpen(true) : setTab(t as Tab));
 
   // sessão existente? valida o token no mount (não entra sozinho na plataforma)
   useEffect(() => {
@@ -131,6 +138,9 @@ export default function App() {
         </nav>
 
         <div className="actions">
+          <button className="ai-btn" onClick={() => setAssistantOpen(true)} aria-label="Falar com a IA" title="Falar com a IA">
+            <SparkMark />
+          </button>
           <button className="icon-btn" aria-label="notificações"><IconBell /><span className="ping" /></button>
           <button className="avatar" title="Editar perfil" onClick={() => setEditOpen(true)}>{user.initials}</button>
           <button className="icon-btn" title="Sair" aria-label="sair" onClick={logout}><IconLogout /></button>
@@ -151,7 +161,6 @@ export default function App() {
             {tab === "health" && <HealthPage />}
             {tab === "goals" && <GoalsPage />}
             {tab === "projection" && <ProjectionPage />}
-            {tab === "assistant" && <AssistantPage />}
           </motion.div>
         </AnimatePresence>
       </main>
@@ -166,14 +175,17 @@ export default function App() {
         ))}
       </nav>
 
-      {/* FAB: atalho fixo pro assistente de IA */}
-      {tab !== "assistant" && (
-        <button className="fab-ai" onClick={() => setTab("assistant")} aria-label="Falar com a IA" title="Falar com a IA">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden>
-            <path d="M12 1.8c.9 5.3 3.9 8.3 9.2 9.2-5.3.9-8.3 3.9-9.2 9.2-.9-5.3-3.9-8.3-9.2-9.2 5.3-.9 8.3-3.9 9.2-9.2Z" fill="currentColor" />
-          </svg>
+      {/* FAB inferior: mesmo atalho do botão do topbar, abre o bottom-sheet */}
+      {!assistantOpen && (
+        <button className="fab-ai" onClick={() => setAssistantOpen(true)} aria-label="Falar com a IA" title="Falar com a IA">
+          <SparkMark />
         </button>
       )}
+
+      {/* Assistente é um bottom-sheet (sobe de baixo, folga no topo) */}
+      <AnimatePresence>
+        {assistantOpen && <AssistantSheet onClose={() => setAssistantOpen(false)} />}
+      </AnimatePresence>
 
       <EditProfileModal open={editOpen} onClose={() => setEditOpen(false)} />
     </div>

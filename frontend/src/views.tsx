@@ -20,7 +20,7 @@ import {
 } from "./components/charts";
 import { CatIcon, ICON_OPTIONS, VITAL_ICON } from "./components/caticon";
 import { BankModal, GoalModal, RecurringModal, SyncModal, TransactionModal } from "./components/modals";
-import { api, type BankStatus } from "./lib/api";
+import { api, type BankStatus, type WhatIf } from "./lib/api";
 import {
   IconBolt,
   IconCheck,
@@ -73,6 +73,7 @@ export function OverviewPage({ go }: { go: Go }) {
   const [txEdit, setTxEdit] = useState<Tx | null>(null);
   const [bankStatus, setBankStatus] = useState<BankStatus | null>(null);
   const [syncOpen, setSyncOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(true);
 
   const refreshBank = () => api.bankStatus().then(setBankStatus).catch(() => {});
   useEffect(() => { refreshBank(); }, []);
@@ -173,6 +174,63 @@ export function OverviewPage({ go }: { go: Go }) {
       </motion.section>
 
       <SyncModal open={syncOpen} onClose={() => setSyncOpen(false)} onDone={refreshBank} bankName={bankName} />
+
+      {/* ENTENDA SEUS NÚMEROS — guia rápido pro usuário ler a tela */}
+      <motion.section {...fade(1)} className="ov-help">
+        <button className="ov-help-head" onClick={() => setHelpOpen((o) => !o)} aria-expanded={helpOpen}>
+          <span className="ov-help-title">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden width="16" height="16">
+              <circle cx="12" cy="12" r="9.2" stroke="currentColor" strokeWidth="1.8" />
+              <path d="M12 11v5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              <circle cx="12" cy="7.6" r="1.1" fill="currentColor" />
+            </svg>
+            Entenda seus números
+          </span>
+          <span className={`ov-help-chev ${helpOpen ? "open" : ""}`}><IconChevron /></span>
+        </button>
+        <AnimatePresence initial={false}>
+          {helpOpen && (
+            <motion.div
+              className="ov-help-body"
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              transition={{ duration: 0.3, ease: EASE }}
+            >
+              <div className="ov-help-grid">
+                <div className="ov-help-item">
+                  <span className="ohi-dot" style={{ background: zone }} />
+                  <div className="ohi-txt">
+                    <b>Score {health.score} · {health.scoreLabel}</b>
+                    <p>Sua saúde financeira numa nota de 0 a 100. Quanto maior, melhor — <b style={{ color: "var(--mint)" }}>verde</b> é saudável, amarelo pede atenção e vermelho é risco.</p>
+                  </div>
+                </div>
+                <div className="ov-help-item">
+                  <span className="ohi-rings" aria-hidden><i /><i /><i /></span>
+                  <div className="ohi-txt">
+                    <b>Os 3 anéis: Fluxo, Cartão e Reserva</b>
+                    <p>Os pilares que formam o score. <b>Fluxo</b> = quanto sobra no mês · <b>Cartão</b> = quanto do limite você usa · <b>Reserva</b> = seu colchão pra imprevistos. Toque pra ver detalhes.</p>
+                  </div>
+                </div>
+                <div className="ov-help-item">
+                  <span className="ohi-bar" aria-hidden><i style={{ width: `${Math.min(100, spentPct)}%` }} /></span>
+                  <div className="ohi-txt">
+                    <b>Barra do mês — {spentPct}% gasto</b>
+                    <p>Quanto da sua renda já saiu até agora. A marca <em>projeção</em> mostra quanto você deve gastar até fechar o mês ({projSpendPct}%), calculado pela IA.</p>
+                  </div>
+                </div>
+                <div className="ov-help-item">
+                  <span className="ohi-dot" style={{ background: monthClose < 0 ? "var(--coral)" : "var(--mint)" }} />
+                  <div className="ohi-txt">
+                    <b>Saldo projetado: {brl0(monthClose)}</b>
+                    <p>Quanto deve sobrar (ou faltar) na sua conta no fim do mês, somando o que ainda entra e sai. Verde sobra, vermelho falta.</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.section>
 
       {/* TRIO DE VITAIS */}
       <motion.section {...fade(1)} className="trio">
@@ -609,6 +667,25 @@ export function GoalsPage() {
 /* ============================================================
    4. PROJEÇÃO — saldo no mês + áreas de corte selecionáveis
    ============================================================ */
+const WHATIF_EXEMPLOS = [
+  "E se eu cortar metade do delivery?",
+  "E se eu receber R$ 1.000 extra?",
+  "E se eu adiar a fatura do cartão?",
+  "E se eu gastar 20% a menos no mês?",
+];
+
+/** Traduz os knobs do motor em chips legíveis pro usuário. */
+function adjLabels(adj: Record<string, number | boolean>): string[] {
+  const out: string[] = [];
+  const pct = (v: number) => `${v > 1 ? "+" : ""}${Math.round((v - 1) * 100)}%`;
+  if (typeof adj.spendPct === "number" && adj.spendPct !== 1) out.push(`gasto variável ${pct(adj.spendPct)}`);
+  if (typeof adj.recurringPct === "number" && adj.recurringPct !== 1) out.push(`gastos fixos ${pct(adj.recurringPct)}`);
+  if (typeof adj.extraIncome === "number" && adj.extraIncome > 0) out.push(`+${brl0(adj.extraIncome)} de entrada`);
+  if (typeof adj.oneOffExpense === "number" && adj.oneOffExpense > 0) out.push(`−${brl0(adj.oneOffExpense)} pontual`);
+  if (adj.skipCreditBill === true) out.push("adia a fatura");
+  return out;
+}
+
 export function ProjectionPage() {
   const { data, recurringCandidates, confirmRecurringCandidate, dismissRecurringCandidate, saveCutPlan, clearCutPlan } = useData();
   const { projection, user, recurring, balance, spendByCategory, cutPlan } = data!;
@@ -617,16 +694,60 @@ export function ProjectionPage() {
   const [recOpen, setRecOpen] = useState(false);
   const [recEdit, setRecEdit] = useState<Recurring | null>(null);
   const [confirmingRec, setConfirmingRec] = useState<string | null>(null);
+  const [hidden, setHidden] = useState<Set<string>>(new Set()); // áreas de corte ocultas
+  const [chooserOpen, setChooserOpen] = useState(false);
 
-  // áreas de corte derivadas AUTOMATICAMENTE do gasto real por categoria
-  // (mesma fonte do donut da Saúde — backend, conta + cartão). Pula entradas/
-  // transferências/investimentos: não são gasto discricionário pra cortar.
+  function toggleArea(id: string) {
+    setHidden((h) => {
+      const n = new Set(h);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+  }
+
+  // what-if por IA: usuário descreve um cenário → backend traduz e re-roda o MC
+  const [wiDraft, setWiDraft] = useState("");
+  const [wiLoading, setWiLoading] = useState(false);
+  const [wiErr, setWiErr] = useState("");
+  const [scenario, setScenario] = useState<WhatIf | null>(null);
+
+  async function runWhatIf(text: string) {
+    const t = text.trim();
+    if (!t || wiLoading) return;
+    setWiLoading(true);
+    setWiErr("");
+    try {
+      const r = await api.projectionWhatIf(t);
+      if (r.error) setWiErr(r.error);
+      else setScenario(r);
+    } catch (e: any) {
+      setWiErr(String(e?.message ?? e));
+    } finally {
+      setWiLoading(false);
+    }
+  }
+  function clearScenario() {
+    setScenario(null);
+    setWiDraft("");
+    setWiErr("");
+  }
+
+  // áreas de corte = gasto real por categoria (conta+cartão) + gastos fixos
+  // ativos que você cadastrou (esses não têm transação ainda, então não vêm no
+  // gasto por categoria). Pula entradas/transferências/investimentos.
   const SKIP_CUT = /transfer|investiment|renda|entrada|sal[áa]rio/i;
   const iconByCat: Record<string, string> = Object.fromEntries(ICON_OPTIONS.map((o) => [o.label, o.key]));
-  const cutAreas = Object.entries(spendByCategory ?? {})
+  const catAreas = Object.entries(spendByCategory ?? {})
     .filter(([cat, v]) => v > 0 && !SKIP_CUT.test(cat))
-    .sort((a, b) => b[1] - a[1])
-    .map(([label, spent]) => ({ id: label, label, spent, icon: iconByCat[label] ?? "card" }));
+    .map(([label, spent]) => ({ id: `cat:${label}`, label, spent, icon: iconByCat[label] ?? "card", fixo: false }));
+  const catLabels = new Set(catAreas.map((a) => a.label.toLowerCase()));
+  const recAreas = recurring
+    .filter((r) => r.active && r.amount > 0 && !catLabels.has(r.label.toLowerCase()))
+    .map((r) => ({ id: `rec:${r.id}`, label: r.label, spent: r.amount, icon: r.icon || "card", fixo: true }));
+  const allAreas = [...catAreas, ...recAreas].sort((a, b) => b.spent - a.spent);
+
+  // só as áreas escolhidas (não ocultas) entram no plano e na conta
+  const cutAreas = allAreas.filter((a) => !hidden.has(a.id));
 
   // corte total: cada área pode ser cortada até zerar o próprio gasto
   const totalCut = cutAreas.reduce((a, x) => a + Math.min(cuts[x.id] || 0, x.spent), 0);
@@ -687,6 +808,75 @@ export function ProjectionPage() {
   return (
     <div className="page">
       <PageHead kicker="como o mês vai fechar" title={`Projeção de ${user.monthLabel}`} />
+
+      {/* WHAT-IF POR IA: descreve um cenário em PT-BR → IA recalcula o Monte Carlo */}
+      <motion.div {...fade(0)} className="panel whatif-ai">
+        <div className="panel-head">
+          <h2>Simule um cenário com IA</h2>
+          <span className="hint-cap">what-if</span>
+        </div>
+        <p className="chart-note" style={{ marginTop: 0, marginBottom: 12 }}>
+          Descreva uma mudança em português — a IA traduz e recalcula sua projeção do mês. Nada é salvo.
+        </p>
+        <div className="composer wifi-composer">
+          <input
+            value={wiDraft}
+            onChange={(e) => setWiDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && runWhatIf(wiDraft)}
+            placeholder="Ex.: e se eu cortar metade do delivery?"
+            disabled={wiLoading}
+          />
+          <button className="send" onClick={() => runWhatIf(wiDraft)} disabled={wiLoading} aria-label="simular">
+            {wiLoading ? <span className="wifi-spin" /> : <IconSend />}
+          </button>
+        </div>
+        <div className="chips" style={{ marginTop: 10 }}>
+          {WHATIF_EXEMPLOS.map((c) => (
+            <button key={c} className="chip" disabled={wiLoading} onClick={() => { setWiDraft(c); runWhatIf(c); }}>{c}</button>
+          ))}
+        </div>
+        {wiErr && <div className="form-error" style={{ marginTop: 12 }}>Não consegui simular: {wiErr}</div>}
+        {scenario && (
+          <motion.div
+            className="wifi-result"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: EASE }}
+          >
+            {scenario.note && <div className="wifi-note">💡 {scenario.note}</div>}
+            <div className="wifi-cmp">
+              <div className="wifi-col">
+                <span className="lbl">No ritmo atual</span>
+                <span className="num">{brl0(scenario.base.expected)}</span>
+                <small>{Math.round(scenario.base.probabilityNegative * 100)}% no vermelho</small>
+              </div>
+              <div className="wifi-arrow">→</div>
+              <div className="wifi-col">
+                <span className="lbl">Nesse cenário</span>
+                <span className="num" style={{ color: scenario.scenario.expected >= 0 ? "var(--mint)" : "var(--coral)" }}>
+                  {brl0(scenario.scenario.expected)}
+                </span>
+                <small>{Math.round(scenario.scenario.probabilityNegative * 100)}% no vermelho</small>
+              </div>
+            </div>
+            {(() => {
+              const diff = scenario.scenario.expected - scenario.base.expected;
+              const melhor = diff >= 0;
+              return (
+                <div className="wifi-delta" style={{ color: melhor ? "var(--mint)" : "var(--coral)" }}>
+                  {melhor ? "▲" : "▼"} {brl0(Math.abs(diff))} {melhor ? "a mais" : "a menos"} no fim do mês
+                </div>
+              );
+            })()}
+            {adjLabels(scenario.adjustments).length > 0 && (
+              <div className="wifi-chips">
+                {adjLabels(scenario.adjustments).map((l) => <span key={l} className="wifi-tag">{l}</span>)}
+              </div>
+            )}
+            <button className="link" onClick={clearScenario} style={{ marginTop: 4 }}>limpar cenário</button>
+          </motion.div>
+        )}
+      </motion.div>
 
       {/* banner: gastos fixos detectados pelo Cumbuca aguardando confirmação */}
       {recurringCandidates.length > 0 && (
@@ -755,10 +945,11 @@ export function ProjectionPage() {
             <div className="proj-legend">
               <span><i className="ln solid" /> realizado</span>
               <span><i className="ln dash" /> projeção</span>
-              {totalCut > 0 && <span><i className="ln plan" /> com plano</span>}
+              {scenario ? <span><i className="ln plan" /> cenário IA</span>
+                : totalCut > 0 && <span><i className="ln plan" /> com plano</span>}
             </div>
           </div>
-          <ProjectionChart median={projection.median} todayIndex={projection.todayIndex} plan={totalCut > 0 ? plan : undefined} monthLabel={user.monthLabel} />
+          <ProjectionChart median={projection.median} todayIndex={projection.todayIndex} plan={scenario ? scenario.scenario.median : totalCut > 0 ? plan : undefined} monthLabel={user.monthLabel} />
           <div className="foot-note">simulação Monte Carlo · {projection.driver}</div>
         </motion.div>
 
@@ -766,10 +957,29 @@ export function ProjectionPage() {
         <motion.div {...fade(3)} className="panel span-4">
           <div className="panel-head">
             <h2>Onde você corta</h2>
-            <span className="hint-cap">áreas do mês</span>
+            <button className="link-add" onClick={() => setChooserOpen((o) => !o)}>
+              {chooserOpen ? "ok" : "escolher áreas"}
+            </button>
           </div>
 
-          {cutAreas.length === 0 && <div className="empty">Sem gastos pra cortar este mês.</div>}
+          {chooserOpen && (
+            <div className="cut-chooser">
+              {allAreas.length === 0 && <div className="empty">Nenhuma área disponível. Adicione gastos fixos abaixo.</div>}
+              {allAreas.map((a) => {
+                const on = !hidden.has(a.id);
+                return (
+                  <button key={a.id} className={`cut-pick ${on ? "on" : ""}`} onClick={() => toggleArea(a.id)} title={on ? "tocar p/ ocultar" : "tocar p/ incluir"}>
+                    <span className="cp-ic"><CatIcon name={a.icon} /></span>
+                    <span className="cp-lb">{a.label}</span>
+                    {a.fixo && <em className="cp-fixo">fixo</em>}
+                    <span className="cp-check">{on ? "✓" : "+"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {cutAreas.length === 0 && <div className="empty">Nenhuma área selecionada. Toque em “escolher áreas”.</div>}
 
           {cutAreas.map((a) => {
             const spent     = a.spent;
@@ -787,7 +997,7 @@ export function ProjectionPage() {
               <div className="cut" key={a.id}>
                 <div className="cut-head">
                   <span className="cut-ic"><CatIcon name={a.icon} /></span>
-                  <span className="cut-label">{a.label}</span>
+                  <span className="cut-label">{a.label}{a.fixo && <span className="cut-fixo">fixo</span>}</span>
                 </div>
 
                 <input
@@ -893,7 +1103,7 @@ const SUGESTOES = [
 ];
 
 
-export function AssistantPage() {
+export function AssistantSheet({ onClose }: { onClose: () => void }) {
   const { data } = useData();
   const { recommendations } = data!;
   const [msgs, setMsgs] = useState<ChatMsg[]>([]);
@@ -954,88 +1164,104 @@ export function AssistantPage() {
     : "modo demonstração · conecte seu banco";
 
   return (
-    <div className="page">
-      <PageHead kicker="captura conversacional" title="Assistente Pulso" />
-
-      <div className="chat-shell">
-        <motion.div {...fade(1)} className="chat-panel">
-          <div className="chat-head">
-            <div className="av"><IconBolt /></div>
-            <div><b>Assistente Pulso</b><small>{subtitle}</small></div>
-            <button className="btn btn-ghost btn-sm" style={{ marginLeft: "auto" }} onClick={onBankClick}>
-              {connected ? "✓ Banco conectado" : "Conectar banco (Cumbuca)"}
-            </button>
+    <motion.div
+      className="ai-scrim"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+      onClick={onClose}
+    >
+      <motion.div
+        className="ai-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Assistente Pulso"
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", stiffness: 320, damping: 34 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="ai-grab" />
+        <div className="chat-head">
+          <div className="av"><IconBolt /></div>
+          <div className="ai-head-txt"><b>Assistente Pulso</b><small>{subtitle}</small></div>
+          <button className="btn btn-ghost btn-sm ai-bank-btn" onClick={onBankClick}>
+            {connected ? "✓ Banco conectado" : "Conectar banco (Cumbuca)"}
+          </button>
+          <button className="modal-x" onClick={onClose} aria-label="fechar assistente">×</button>
+        </div>
+        {bankErr && (
+          <div style={{ padding: "8px 14px", color: "var(--danger, #e5484d)", fontSize: 13 }}>
+            Falha ao conectar o banco. Veja o console do backend.
           </div>
-          {bankErr && (
-            <div style={{ padding: "8px 14px", color: "var(--danger, #e5484d)", fontSize: 13 }}>
-              Falha ao conectar o banco. Veja o console do backend.
-            </div>
-          )}
-          <div className="chat-thread">
-            {vazio ? (
-              /* estado vazio estilo claude.ai: saudação central + chips, sem mensagem */
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4, ease: EASE }}
-                style={{
-                  flex: 1, display: "flex", flexDirection: "column",
-                  alignItems: "center", justifyContent: "center", gap: 18, textAlign: "center",
-                }}
-              >
-                <h2 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", margin: 0 }}>
-                  Como posso ajudar com seu dinheiro?
-                </h2>
-                <div className="chips" style={{ justifyContent: "center", maxWidth: 480 }}>
-                  {SUGESTOES.map((c) => <button key={c} className="chip" onClick={() => send(c)}>{c}</button>)}
-                </div>
-              </motion.div>
-            ) : (
-              <>
-                <AnimatePresence initial={false}>
-                  {msgs.map((m) => (
-                    <motion.div
-                      key={m.id}
-                      initial={{ opacity: 0, y: 12 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.32, ease: EASE }}
-                      className="bubble-row"
-                      style={{ textAlign: m.from === "user" ? "right" : "left" }}
-                    >
-                      <span className={`bubble ${m.from}`}>{m.text}</span>
-                    </motion.div>
+        )}
+        <div className="chat-thread">
+          {vazio ? (
+            /* estado vazio estilo claude.ai: saudação + chips + recomendações */
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, ease: EASE }}
+              style={{
+                flex: 1, display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center", gap: 18, textAlign: "center",
+              }}
+            >
+              <h2 style={{ fontFamily: "var(--font-display)", fontSize: 24, fontWeight: 600, letterSpacing: "-0.02em", margin: 0 }}>
+                Como posso ajudar com seu dinheiro?
+              </h2>
+              <div className="chips" style={{ justifyContent: "center", maxWidth: 480 }}>
+                {SUGESTOES.map((c) => <button key={c} className="chip" onClick={() => send(c)}>{c}</button>)}
+              </div>
+              {recommendations.length > 0 && (
+                <div className="ai-recos">
+                  {recommendations.map((r) => (
+                    <div className={`reco ${r.tone}`} key={r.id}>
+                      <div className="ic"><CatIcon name={r.icon} /></div>
+                      <h3>{r.title}</h3>
+                      <p>{r.text}</p>
+                      <div className="reco-foot"><span className="impact">{r.impact}</span><button className="btn btn-ghost btn-sm" onClick={() => send(r.title)}>{r.cta}</button></div>
+                    </div>
                   ))}
-                </AnimatePresence>
+                </div>
+              )}
+            </motion.div>
+          ) : (
+            <>
+              <AnimatePresence initial={false}>
+                {msgs.map((m) => (
+                  <motion.div
+                    key={m.id}
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.32, ease: EASE }}
+                    className="bubble-row"
+                    style={{ textAlign: m.from === "user" ? "right" : "left" }}
+                  >
+                    <span className={`bubble ${m.from}`}>{m.text}</span>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
 
-                {typing && <div className="typing"><i /><i /><i /></div>}
-                <div ref={endRef} />
-              </>
-            )}
-          </div>
-          <div className="composer">
-            <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send(draft)} placeholder="Pergunte algo ou toque numa opção…" />
-            <button className="send" onClick={() => send(draft)} aria-label="enviar"><IconSend /></button>
-          </div>
-        </motion.div>
+              {typing && <div className="typing"><i /><i /><i /></div>}
+              <div ref={endRef} />
+            </>
+          )}
+        </div>
+        <div className="composer">
+          <input value={draft} onChange={(e) => setDraft(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send(draft)} placeholder="Pergunte algo ou toque numa opção…" />
+          <button className="send" onClick={() => send(draft)} aria-label="enviar"><IconSend /></button>
+        </div>
 
-        <motion.div {...fade(2)} className="chat-side">
-          {recommendations.map((r) => (
-            <div className={`reco ${r.tone}`} key={r.id}>
-              <div className="ic"><CatIcon name={r.icon} /></div>
-              <h3>{r.title}</h3>
-              <p>{r.text}</p>
-              <div className="reco-foot"><span className="impact">{r.impact}</span><button className="btn btn-ghost btn-sm">{r.cta}</button></div>
-            </div>
-          ))}
-        </motion.div>
-      </div>
-
-      <BankModal
-        open={bankModal}
-        onClose={() => setBankModal(false)}
-        status={bankStatus}
-        onChanged={refreshBank}
-      />
-    </div>
+        <BankModal
+          open={bankModal}
+          onClose={() => setBankModal(false)}
+          status={bankStatus}
+          onChanged={refreshBank}
+        />
+      </motion.div>
+    </motion.div>
   );
 }
