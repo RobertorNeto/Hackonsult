@@ -86,8 +86,9 @@ export function OverviewPage({ go }: { go: Go }) {
   const spentPct = balance.income ? Math.round((balance.spent / balance.income) * 100) : 0;
   // Fechamento do mês = saldo final projetado (mesma fonte da aba Projeção e Saúde)
   const monthClose = projection.expected;
-  // Projeção do TOTAL que vai ser gasto no mês = renda - saldo projetado de fechamento
-  const projSpend = Math.max(0, balance.income - monthClose);
+  // Projeção do TOTAL que vai ser gasto no mês (vem do Monte Carlo do backend:
+  // realizado + saída futura). Fallback ao cálculo antigo se o campo não vier.
+  const projSpend = projection.projectedSpend ?? Math.max(0, balance.income - monthClose);
   const projSpendPct = balance.income ? Math.round((projSpend / balance.income) * 100) : 0;
   const scale = Math.max(118, spentPct + 12, projSpendPct + 12);
   const pos = (p: number) => (p / scale) * 100;

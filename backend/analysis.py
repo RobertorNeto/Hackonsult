@@ -18,6 +18,17 @@ MODEL = os.environ.get("OPENAI_MODEL", "gpt-5.4-mini")
 MESES = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun",
          "Jul", "Ago", "Set", "Out", "Nov", "Dez"]
 
+# Vitais canônicos (key → label, ordem). A IA só devolve value/hint/detail por
+# key; label/ord ficam aqui pra UPSERT criar a linha em conta nova (seed blank
+# não semeia vitais) sem depender de skeleton pré-existente.
+VITAL_META = {
+    "fluxo":       ("Fluxo de caixa", 0),
+    "cartao":      ("Uso do cartão", 1),
+    "recorrentes": ("Assinaturas", 2),
+    "reserva":     ("Reserva", 3),
+    "objetivo":    ("Objetivos", 4),
+}
+
 SYSTEM = """Você é o motor de análise de saúde financeira do app Pulso (BR).
 Recebe dados financeiros REAIS e a projeção Monte Carlo JÁ CALCULADA.
 Responda APENAS com JSON válido, exatamente neste schema:
@@ -131,10 +142,20 @@ def run(ctx: dict, conn) -> dict:
 
     valid_status = lambda v: "bom" if v >= 70 else "atencao" if v >= 45 else "critico"
     for v in data.get("vitals", []):
+        key = v.get("key")
+        if not key:
+            continue
         val = max(0, min(100, int(v.get("value", 50))))
+        label, ordn = VITAL_META.get(key, (key, 99))
+        # UPSERT: cria a linha se não existir (conta nova via _seed_blank não tem
+        # vitais); se já existir, preserva label/ord e só atualiza os campos da IA.
         conn.execute(
-            "UPDATE vitals SET value=?, status=?, hint=?, detail=? WHERE key=?",
-            (val, valid_status(val), v.get("hint", ""), v.get("detail", ""), v.get("key")),
+            """INSERT INTO vitals (key, label, value, status, hint, detail, ord)
+               VALUES (?,?,?,?,?,?,?)
+               ON CONFLICT(key) DO UPDATE SET
+                 value=excluded.value, status=excluded.status,
+                 hint=excluded.hint, detail=excluded.detail""",
+            (key, label, val, valid_status(val), v.get("hint", ""), v.get("detail", ""), ordn),
         )
 
     recos = data.get("recommendations", [])[:3]

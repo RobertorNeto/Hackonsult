@@ -99,6 +99,7 @@ export type Balance = {
 
 export type Projection = {
   expected: number;
+  projectedSpend?: number;
   optimistic: number;
   pessimistic: number;
   probabilityNegative: number;
