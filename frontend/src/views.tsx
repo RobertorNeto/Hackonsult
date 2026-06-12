@@ -105,8 +105,9 @@ export function OverviewPage({ go }: { go: Go }) {
   const connect = () => api.bankConnectUrl().then((r) => { window.location.href = r.url; }).catch(() => {});
   // conta nova/sem dados: tela limpa, só o convite pra conectar o banco
   const fresh = !synced && transactions.length === 0;
+  const [skippedBank, setSkippedBank] = useState(false);
 
-  if (fresh) {
+  if (fresh && !skippedBank) {
     return (
       <div className="ov">
         <motion.section {...fade(0)} className="ov-empty">
@@ -126,6 +127,12 @@ export function OverviewPage({ go }: { go: Go }) {
           <span className="ov-empty-note">
             <IconShield /> Parceria Cumbuca · conexão regulada pelo Banco Central
           </span>
+          <button
+            className="btn btn-ghost ov-empty-skip"
+            onClick={() => setSkippedBank(true)}
+          >
+            Explorar sem conectar banco
+          </button>
         </motion.section>
         <SyncModal open={syncOpen} onClose={() => setSyncOpen(false)} onDone={refreshBank} bankName={bankName} />
       </div>

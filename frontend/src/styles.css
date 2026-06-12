@@ -1669,6 +1669,8 @@ input, select { font-family: inherit; }
   display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-mute); margin-top: 4px;
 }
 .ov-empty-note svg { width: 15px; height: 15px; color: var(--mint-2); }
+.ov-empty-skip { font-size: 14px; color: var(--text-mute); margin-top: 4px; }
+.ov-empty-skip { font-size: 14px; color: var(--text-mute); margin-top: 4px; }
 
 /* chip do banco conectado (hero overview) */
 .ov-bank-chip {
@@ -1684,4 +1686,4 @@ input, select { font-family: inherit; }
   background: var(--panel-3); border-radius: var(--radius-sm); padding: 10px 13px; margin-bottom: 4px;
 }
 .sync-bank b { color: var(--text); }
-.sync-bank-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); flex: none; }
+.sync-bank-dot { width:

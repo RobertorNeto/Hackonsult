@@ -232,3 +232,110 @@ def _seed(conn):
     # Sem gastos fixos semeados: o usuário adiciona os reais (ou viram dados reais
     # via análise). Nada de Aluguel/Netflix fictícios poluindo a projeção.
     conn.commit()
+
+
+def seed_demo(conn):
+    """Semeia o banco do usuario demo (Joao Pedro, 21 anos, R$ 4.000/mes).
+    Usa INSERT OR REPLACE para ser idempotente (pode rodar no startup sem limpar dados)."""
+    from seed import DEMO_SEED as S
+
+    u = S["user"]
+    conn.execute(
+        "INSERT OR REPLACE INTO user VALUES (1,?,?,?,?,?,?,?,?,?,?)",
+        (u["name"], u["fullName"], u["initials"], u["age"], u["job"], u["salary"],
+         u["bank"], u["paydayDay"], u["todayLabel"], u["monthLabel"]),
+    )
+    b = S["balance"]
+    conn.execute(
+        "INSERT OR REPLACE INTO balance VALUES (1,?,?,?,?,?,?,?,?)",
+        (b["checking"], b["creditUsed"], b["creditLimit"], b["creditDueDay"],
+         b["income"], b["spent"], b["estSpend"], b["vsLastMonthPct"]),
+    )
+    h = S["health"]
+    conn.execute(
+        "INSERT OR REPLACE INTO health_meta VALUES (1,?,?,?,?,?,?)",
+        (h["score"], h["scoreLabel"], h["zone"], h["deltaMonth"], h["headline"], h["subline"]),
+    )
+    conn.execute("DELETE FROM vitals")
+    for i, v in enumerate(h["vitals"]):
+        conn.execute(
+            "INSERT INTO vitals VALUES (?,?,?,?,?,?,?)",
+            (v["key"], v["label"], v["value"], v["status"], v["hint"], v["detail"], i),
+        )
+    conn.execute("DELETE FROM score_history")
+    for i, p in enumerate(h["history"]):
+        conn.execute("INSERT INTO score_history VALUES (?,?,?)", (i, p["m"], p["v"]))
+    conn.execute("DELETE FROM goals")
+    for g in S["goals"]:
+        conn.execute(
+            "INSERT INTO goals VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (g["id"], g["name"], g["icon"], g["target"], g["saved"], g["progress"],
+             g["targetDate"], g["monthsLeft"], g["probability"], g["risk"],
+             g["monthlyNeeded"], g["monthlyCurrent"], json.dumps(g["actions"]), ""),
+        )
+    conn.execute("DELETE FROM transactions")
+    _demo_base = _demo_created_at()
+    for t in S["transactions"]:
+        conn.execute(
+            "INSERT INTO transactions VALUES (?,?,?,?,?,?,?,?)",
+            (t["id"], t["merchant"], t["category"], t["icon"], t["amount"],
+             t["when"], 1 if t.get("flagged") else 0, _demo_base.get(t["id"], "")),
+        )
+    conn.execute("DELETE FROM levers")
+    for i, lv in enumerate(S["levers"]):
+        conn.execute(
+            "INSERT INTO levers VALUES (?,?,?,?,?,?)",
+            (lv["id"], lv["label"], lv["icon"], lv["current"], lv["max"], i),
+        )
+    p = S["projection"]
+    conn.execute(
+        "INSERT OR REPLACE INTO projection VALUES (1,?,?,?,?,?,?,?,?,?,?)",
+        (p["expected"], p["optimistic"], p["pessimistic"], p["probabilityNegative"],
+         p["todayIndex"], p["daysInMonth"], p["driver"],
+         json.dumps(p["median"]), json.dumps(p["upper"]), json.dumps(p["lower"])),
+    )
+    conn.execute("DELETE FROM recommendations")
+    for i, r in enumerate(S["recommendations"]):
+        conn.execute(
+            "INSERT INTO recommendations VALUES (?,?,?,?,?,?,?,?)",
+            (r["id"], r["icon"], r["title"], r["text"], r["impact"], r["cta"], r["tone"], i),
+        )
+    ins = S["insight"]
+    conn.execute(
+        "INSERT OR REPLACE INTO insight VALUES (1,?,?,?,?,?,?)",
+        (ins["badge"], ins["icon"], ins["title"], ins["body"], ins["primary"], ins["secondary"]),
+    )
+    conn.commit()
+
+
+def _demo_created_at():
+    """Mapeia os IDs das transações demo para created_at ISO realistas (relativos a hoje)."""
+    from datetime import date, timedelta
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    y = today.year
+
+    def iso(d, hm): return f"{d.isoformat()}T{hm}:00"
+
+    return {
+        "d-t1":  iso(today,     "13:20"),
+        "d-t2":  iso(today,     "20:10"),
+        "d-t3":  iso(yesterday, "23:45"),
+        "d-t4":  iso(yesterday, "03:10"),
+        "d-t5":  iso(yesterday, "01:30"),
+        "d-t6":  iso(date(y, 6, 8),  "19:30"),
+        "d-t7":  iso(date(y, 6, 7),  "08:00"),
+        "d-t8":  iso(date(y, 6, 5),  "03:00"),
+        "d-t9":  iso(date(y, 6, 5),  "03:01"),
+        "d-t10": iso(date(y, 6, 5),  "09:00"),
+        "d-t11": iso(date(y, 6, 4),  "20:50"),
+        "d-t12": iso(date(y, 6, 3),  "15:00"),
+        "d-t13": iso(date(y, 6, 2),  "19:20"),
+        "d-t14": iso(date(y, 6, 1),  "23:00"),
+        "d-t15": iso(date(y, 6, 1),  "13:10"),
+        "d-t16": iso(date(y, 5, 31), "14:00"),
+        "d-t17": iso(date(y, 5, 30), "03:00"),
+        "d-t18": iso(date(y, 5, 29), "21:00"),
+        "d-t19": iso(date(y, 5, 28), "18:30"),
+        "d-t20": iso(date(y, 5, 27), "20:00"),
+    }

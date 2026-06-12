@@ -23,7 +23,7 @@ import analysis
 import assistant
 import auth
 import cumbuca
-from db import get_conn, init_db
+from db import get_conn, get_conn_for, init_db, seed_demo
 
 app = Flask(__name__)
 # CORS liberado: auth é por Bearer token (sem cookie), então origin aberta é ok.
@@ -33,6 +33,48 @@ CORS(app)
 # o bloco __main__ nunca roda, então as tabelas/dirs precisam existir aqui.
 init_db()
 auth.init()
+
+
+def _ensure_demo_user():
+    """Garante que demo@gmail.com / Demo123 existe no startup e tem dados semeados.
+    Erros sao capturados para nao impedir o servidor de subir."""
+    try:
+        DEMO_EMAIL = "demo@gmail.com"
+        DEMO_NAME = "Joao Pedro"
+        from db import get_auth_conn
+        # 1. verifica se ja existe
+        conn = get_auth_conn()
+        try:
+            row = conn.execute("SELECT id FROM accounts WHERE email=?", (DEMO_EMAIL,)).fetchone()
+            account_id = row["id"] if row else None
+        finally:
+            conn.close()
+        # 2. cria se nao existe
+        if account_id is None:
+            try:
+                result = auth.register(DEMO_NAME, DEMO_EMAIL, "Demo123")
+                account_id = result["user"]["id"]
+            except auth.AuthError:
+                conn2 = get_auth_conn()
+                try:
+                    row2 = conn2.execute("SELECT id FROM accounts WHERE email=?", (DEMO_EMAIL,)).fetchone()
+                    account_id = row2["id"] if row2 else None
+                finally:
+                    conn2.close()
+        # 3. semeia os dados demo
+        if account_id:
+            dc = get_conn_for(account_id)
+            try:
+                seed_demo(dc)
+            finally:
+                dc.close()
+    except Exception as _demo_err:
+        import traceback as _tb
+        print(f"[pulso] aviso: falha ao criar usuario demo: {_demo_err}")
+        _tb.print_exc()
+
+
+_ensure_demo_user()
 
 
 # ----------------------- auth gate -----------------------
