@@ -40,18 +40,32 @@ const SparkMark = () => (
 
 export default function App() {
   const { data, loading, error, reload } = useData();
-  const [tab, setTab] = useState<Tab>("overview");
+  // aba persistida: F5 mantém você na mesma aba (não volta pro começo)
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = localStorage.getItem("pulso_tab");
+    return t === "health" || t === "goals" || t === "projection" ? (t as Tab) : "overview";
+  });
   const [editOpen, setEditOpen] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [view, setView] = useState<"landing" | "login" | "register" | "app">("landing");
+  // com token salvo, já abre direto na plataforma (F5 não joga pra landing)
+  const [view, setView] = useState<"landing" | "login" | "register" | "app">(
+    () => (getToken() ? "app" : "landing"),
+  );
   const [account, setAccount] = useState<AuthUser | null>(null);
+  // enquanto valida o token salvo, segura a tela de boot (sem piscar landing/erro)
+  const [booting, setBooting] = useState<boolean>(() => !!getToken());
   // "assistant" não é mais uma aba: abre o bottom-sheet. Resto troca de aba.
   const go = (t: string) => (t === "assistant" ? setAssistantOpen(true) : setTab(t as Tab));
 
-  // sessão existente? valida o token no mount (não entra sozinho na plataforma)
+  useEffect(() => { localStorage.setItem("pulso_tab", tab); }, [tab]);
+
+  // sessão existente? valida o token no mount e entra direto na plataforma
   useEffect(() => {
     if (!getToken()) return;
-    api.me().then((r) => setAccount(r.user)).catch(() => clearToken());
+    api.me()
+      .then((r) => setAccount(r.user))
+      .catch(() => { clearToken(); setView("landing"); })
+      .finally(() => setBooting(false));
   }, []);
 
   function enterApp(u: AuthUser) {
@@ -85,7 +99,7 @@ export default function App() {
     );
   }
 
-  if (loading) {
+  if (booting || loading) {
     return (
       <div className="boot">
         <div className="boot-mark"><IconBolt /></div>
