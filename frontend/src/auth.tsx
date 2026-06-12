@@ -39,6 +39,20 @@ export default function AuthPage({
     setReset(on); setErr(null); setDone(null); setPassword(""); setNewPass("");
   }
 
+  async function loginDemo() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const res = await api.login("demo@gmail.com", "Demo123");
+      setToken(res.token);
+      onAuthed(res.user);
+    } catch {
+      setErr("Não foi possível acessar a demo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -145,8 +159,8 @@ export default function AuthPage({
             )}
           </p>
           {isLogin && !reset && (
-            <button type="button" className="glx-reset-link" onClick={() => toggleReset(true)}>
-              Trocar senha
+            <button type="button" className="glx-reset-link" onClick={loginDemo} disabled={busy}>
+              Acessar demo
             </button>
           )}
         </div>

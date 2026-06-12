@@ -59,7 +59,7 @@ export default function LandingPage({ onEnter }: { onEnter: () => void }) {
             <HeroIconCycle reduce={reduce} />
           </motion.div>
           <motion.h1 className="lp-h1" variants={fadeUp(reduce)}>
-            Seu dinheiro com um copiloto que <em>entende o mês inteiro</em>.
+            Seu assessor financeiro pessoal, <em>no bolso</em>.
           </motion.h1>
           <motion.p className="lp-sub" variants={fadeUp(reduce)}>
             O Pulso lê suas transações reais via Open Finance, projeta como o mês vai fechar
